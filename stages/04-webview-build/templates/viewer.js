@@ -129,6 +129,43 @@ function autoFrame(camera, controls, obj) {
   controls.update();
 }
 
+// -------------------------------------------------------------------- applySkin
+
+// Baked skin settings, dialled in via the live panel then frozen here.
+//   roughness floor  = 0.42   (max() against roughnessMap.g * roughness)
+//   roughness bias   = 0.00
+//   roughness mul    = 1.00   (material.roughness)
+//   specularIntensity= 0.65
+//   clearcoat        = 0.00
+//   sheen            = 0.00
+//   envMapIntensity  = 1.00   (default, left alone)
+//   exposure         = 1.00   (default, left alone on renderer)
+function applySkin(mat) {
+  if ('metalness' in mat)          mat.metalness = 0;
+  if ('roughness' in mat)          mat.roughness = 1.0;
+  if ('specularIntensity' in mat)  mat.specularIntensity = 0.65;
+  // Inject roughness-floor override: roughnessMap's scalar multiplier can only
+  // darken below the baked value — `uRoughMin` clamps roughness up to a floor
+  // so the baked-in oily hotspots on forehead/nose blur into matte.
+  uniqueCacheKey(mat);
+  const prevOBC = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader) => {
+    if (prevOBC) prevOBC(shader);
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <roughnessmap_fragment>',
+      `
+      float roughnessFactor = roughness;
+      #ifdef USE_ROUGHNESSMAP
+        vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );
+        roughnessFactor *= texelRoughness.g;
+      #endif
+      roughnessFactor = max( roughnessFactor, 0.42 );
+      `
+    );
+  };
+  mat.needsUpdate = true;
+}
+
 // --------------------------------------------------------------- material patch
 
 function patchMaterials(root, mapping, baseUrl) {
@@ -153,6 +190,10 @@ function patchMaterials(root, mapping, baseUrl) {
   };
 
   const counts = { matched: 0, skipped: 0, byKind: {} };
+  // Hair gets a render-time two-pass treatment (inner opaque alpha-clip +
+  // outer translucent alpha-blend). Collect candidates in the traverse and
+  // clone them after, so we don't mutate the scene graph while walking it.
+  const hairTwoPass = [];
   root.traverse((obj) => {
     if (!obj.isMesh) return;
     const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -168,10 +209,31 @@ function patchMaterials(root, mapping, baseUrl) {
         if (Array.isArray(obj.material)) obj.material[i] = patched;
         else obj.material = patched;
       }
+      if (spec.kind === 'hair') {
+        hairTwoPass.push({ mesh: obj, slot: i, outerMat: patched || mat, spec });
+      }
+      if (spec.kind === 'skin') {
+        // Ensure MeshPhysicalMaterial so specularIntensity / IOR are real
+        // properties, then bake the tuned skin settings. No live sliders —
+        // values came from eyeballing in the panel, now fixed in code.
+        let skinMat = patched || mat;
+        if (!skinMat.isMeshPhysicalMaterial && skinMat.isMeshStandardMaterial) {
+          const phys = new THREE.MeshPhysicalMaterial();
+          phys.copy(skinMat);
+          phys.name = skinMat.name;
+          skinMat = phys;
+          if (Array.isArray(obj.material)) obj.material[i] = phys;
+          else obj.material = phys;
+        }
+        applySkin(skinMat);
+      }
     });
   });
+  for (const { mesh, outerMat, spec } of hairTwoPass) {
+    addHairInnerPass(mesh, outerMat, spec);
+  }
   console.log('[viewer] patched', counts.matched, 'matched /', counts.skipped,
-              'skipped', counts.byKind);
+              'skipped', counts.byKind, '/ hair two-pass:', hairTwoPass.length);
 }
 
 function applySpec(mat, spec, loadTex) {
@@ -324,14 +386,15 @@ function applyHair(mat, p, t, loadTex) {
     return;
   }
 
-  // Use three.js built-in alpha-hash (battle-tested) on the alphaMap channel.
-  // Default alphaMap sampler picks .g; override <alphamap_fragment> to pick
-  // the declared channel (R for compact atlas, A for legacy).
+  // Two-pass hair: this material is the OUTER pass — translucent alpha-blend
+  // over the alphaMap channel, depth-write disabled. An inner opaque alpha-
+  // clip sibling is added by patchMaterials (addHairInnerPass) so the core
+  // silhouette writes depth reliably and the outer fringe blends on top.
   mat.alphaMap = atlas;
-  mat.alphaHash = true;         // stable-stipple discard against hash(vPosition)
-  mat.transparent = false;
+  mat.alphaHash = false;
+  mat.transparent = true;
   mat.alphaTest = 0.0;
-  mat.depthWrite = true;
+  mat.depthWrite = false;
   mat.side = THREE.DoubleSide;
 
   const chan = (p.alpha_channel || 'r').toLowerCase();
@@ -350,7 +413,50 @@ function applyHair(mat, p, t, loadTex) {
       `
     );
   };
-  console.log('[viewer][hair]', mat.name, '→ alphaHash R-channel, atlas=' + atlasUrl);
+  console.log('[viewer][hair]', mat.name, '→ outer alpha-blend R-channel, atlas=' + atlasUrl);
+}
+
+// Build the inner opaque-alpha-clip sibling for a hair mesh.
+// Shares BufferGeometry and the alphaMap Texture with the outer pass — no
+// extra VRAM for geometry or textures. Only the material is cloned.
+function addHairInnerPass(mesh, outerMat, spec) {
+  if (!outerMat?.alphaMap) return;         // nothing to clip against
+  if (Array.isArray(mesh.material)) return; // multi-slot hair meshes: skip for now
+  const p = spec.params || {};
+  const chan = (p.alpha_channel || 'r').toLowerCase();
+  const swizzle = ({ r: 'r', g: 'g', b: 'b', a: 'a' }[chan]) || 'r';
+  const threshold = typeof p.inner_alpha_threshold === 'number'
+                    ? p.inner_alpha_threshold : 0.5;
+
+  const innerMat = outerMat.clone();
+  innerMat.name = (outerMat.name || 'hair') + '__inner';
+  // Alpha-clip core: opaque bucket, depth-writes, sharp threshold on R.
+  innerMat.alphaHash = false;
+  innerMat.transparent = false;
+  innerMat.depthWrite = true;
+  innerMat.alphaTest = threshold;
+  innerMat.side = THREE.DoubleSide;
+
+  uniqueCacheKey(innerMat);
+  innerMat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <alphamap_fragment>',
+      `
+      #ifdef USE_ALPHAMAP
+        diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).${swizzle};
+      #endif
+      `
+    );
+  };
+  innerMat.needsUpdate = true;
+
+  // mesh.clone() shares BufferGeometry (no VRAM cost) and correctly copies
+  // skeleton binding for SkinnedMesh so the clone deforms with the rig.
+  const inner = mesh.clone();
+  inner.material = innerMat;
+  inner.name = mesh.name + '__inner';
+  mesh.parent?.add(inner);
+  console.log('[viewer][hair] +inner pass for', mesh.name, 'alphaTest=' + threshold);
 }
 
 // ---------------- eye refractive
