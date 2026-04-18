@@ -1150,14 +1150,24 @@ function buildBlendshapePanel(container, morphMeshes) {
     header.textContent = open ? 'blendshapes ▴' : 'blendshapes ▾';
   });
 
-  // Reset-all button
+  // Reset-all + live-capture buttons
   const resetRow = document.createElement('div');
   resetRow.style.cssText = 'display:flex;gap:6px;margin:2px 0 6px';
   const resetBtn = document.createElement('button');
   resetBtn.textContent = 'reset all';
   resetBtn.style.cssText = 'flex:1;padding:4px 8px;background:#2a2f3a;color:#e8e8e8;border:1px solid #3a4050;border-radius:4px;cursor:pointer;font:inherit';
   resetRow.appendChild(resetBtn);
+
+  const liveBtn = document.createElement('button');
+  liveBtn.textContent = '● live';
+  liveBtn.title = 'Drive blendshapes from your webcam (MediaPipe FaceLandmarker). Requires camera permission.';
+  liveBtn.style.cssText = 'flex:1;padding:4px 8px;background:#2a2f3a;color:#e8e8e8;border:1px solid #3a4050;border-radius:4px;cursor:pointer;font:inherit';
+  resetRow.appendChild(liveBtn);
   body.appendChild(resetRow);
+
+  const statusEl = document.createElement('div');
+  statusEl.style.cssText = 'font-size:10px;color:#89a;margin:0 0 4px;min-height:12px';
+  body.appendChild(statusEl);
 
   const allSliders = [];
 
@@ -1203,13 +1213,179 @@ function buildBlendshapePanel(container, morphMeshes) {
     for (const key of present) addSlider(key);
   }
 
-  resetBtn.addEventListener('click', () => {
+  const resetAll = () => {
     for (const { influences } of morphMeshes) {
       for (let i = 0; i < influences.length; i++) influences[i] = 0;
     }
     for (const reset of allSliders) reset();
+  };
+  resetBtn.addEventListener('click', resetAll);
+
+  // Live capture toggle: MediaPipe FaceLandmarker → morphTargetInfluences.
+  // Sliders are disabled while tracking (the RAF loop overwrites every frame).
+  let capture = null;
+  const setSlidersDisabled = (disabled) => {
+    for (const input of body.querySelectorAll('input[type=range]')) {
+      input.disabled = disabled;
+      input.style.opacity = disabled ? '0.4' : '1';
+    }
+  };
+  liveBtn.addEventListener('click', async () => {
+    if (capture) {
+      stopLiveCapture(capture);
+      capture = null;
+      liveBtn.textContent = '● live';
+      liveBtn.style.background = '#2a2f3a';
+      statusEl.textContent = '';
+      setSlidersDisabled(false);
+      resetAll();
+      return;
+    }
+    liveBtn.disabled = true;
+    liveBtn.textContent = '…loading';
+    try {
+      capture = await startLiveCapture({
+        container,
+        morphMeshes,
+        setInfluence,
+        statusEl,
+      });
+      liveBtn.textContent = '■ stop';
+      liveBtn.style.background = '#7a3030';
+      setSlidersDisabled(true);
+    } catch (err) {
+      console.error('[viewer][capture] start failed', err);
+      statusEl.textContent = 'error: ' + (err && err.message || err);
+      liveBtn.textContent = '● live';
+    } finally {
+      liveBtn.disabled = false;
+    }
   });
 
   container.appendChild(root);
   console.log('[viewer] blendshape panel: ' + available.size + ' shape keys across ' + morphMeshes.length + ' mesh(es)');
+}
+
+// ---------------- live face capture (MediaPipe FaceLandmarker)
+//
+// MediaPipe Tasks Vision emits ARKit-named blendshape coefficients in-browser
+// via WebAssembly + WebGL. Category names match the ARKit 52 convention we
+// bake into the GLB ("eyeBlinkLeft", "jawOpen", …), so we can write each score
+// straight into morphTargetInfluences without a remap table. MediaPipe's
+// "_neutral" category is ignored.
+//
+// Pins: tasks-vision 0.10.14 from jsDelivr (ESM bundle + wasm sidecar), model
+// asset float16/1 from Google Storage. Bumping versions should keep the
+// ARKit-52 category set stable (documented in MediaPipe's FaceLandmarker spec).
+
+const MEDIAPIPE_VERSION = '0.10.14';
+const MEDIAPIPE_BUNDLE  = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/vision_bundle.mjs`;
+const MEDIAPIPE_WASM    = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`;
+const FACE_LANDMARKER_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+
+async function startLiveCapture({ container, morphMeshes, setInfluence, statusEl }) {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error('camera not available (requires HTTPS or localhost)');
+  }
+
+  statusEl.textContent = 'loading MediaPipe…';
+  const vision = await import(/* @vite-ignore */ MEDIAPIPE_BUNDLE);
+  const { FaceLandmarker, FilesetResolver } = vision;
+  const fileset = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM);
+  const landmarker = await FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: FACE_LANDMARKER_MODEL, delegate: 'GPU' },
+    runningMode: 'VIDEO',
+    numFaces: 1,
+    outputFaceBlendshapes: true,
+    outputFacialTransformationMatrixes: false,
+  });
+
+  statusEl.textContent = 'requesting camera…';
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+    audio: false,
+  });
+
+  const video = document.createElement('video');
+  video.autoplay = true;
+  video.playsInline = true;
+  video.muted = true;
+  video.srcObject = stream;
+  // Bottom-right picture-in-picture preview. scaleX(-1) = mirrored selfie view.
+  video.style.cssText = [
+    'position:absolute', 'bottom:8px', 'right:8px', 'z-index:11',
+    'width:180px', 'max-width:40%',
+    'border:1px solid #2a2f3a', 'border-radius:6px',
+    'background:#000', 'transform:scaleX(-1)',
+    'pointer-events:none',
+  ].join(';');
+  container.appendChild(video);
+
+  await new Promise((resolve, reject) => {
+    const ok = () => resolve();
+    const fail = () => reject(new Error('video failed to load'));
+    video.addEventListener('loadedmetadata', ok, { once: true });
+    video.addEventListener('error', fail, { once: true });
+  });
+  await video.play();
+
+  statusEl.textContent = 'tracking';
+
+  let running = true;
+  let lastVideoTime = -1;
+  let rafId = 0;
+  // Track which keys we wrote last frame so we can zero keys that drop out of
+  // the result on the next frame — MediaPipe only returns the 52 ARKit names,
+  // but reset-to-zero on detection loss keeps the mesh from freezing mid-pose.
+  const lastWritten = new Set();
+
+  const loop = () => {
+    if (!running) return;
+    if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+      lastVideoTime = video.currentTime;
+      try {
+        const res = landmarker.detectForVideo(video, performance.now());
+        const bs = res?.faceBlendshapes?.[0]?.categories;
+        if (bs && bs.length > 0) {
+          const seen = new Set();
+          for (const cat of bs) {
+            if (cat.categoryName === '_neutral') continue;
+            setInfluence(cat.categoryName, cat.score);
+            seen.add(cat.categoryName);
+          }
+          // Zero any keys we set last frame but didn't see this frame.
+          for (const prev of lastWritten) {
+            if (!seen.has(prev)) setInfluence(prev, 0);
+          }
+          lastWritten.clear();
+          for (const k of seen) lastWritten.add(k);
+        } else {
+          // No face detected this frame — decay everything we were driving.
+          for (const prev of lastWritten) setInfluence(prev, 0);
+          lastWritten.clear();
+          statusEl.textContent = 'tracking (no face)';
+        }
+        if (bs && bs.length > 0) statusEl.textContent = 'tracking';
+      } catch (err) {
+        console.warn('[viewer][capture] detect failed', err);
+      }
+    }
+    rafId = requestAnimationFrame(loop);
+  };
+  rafId = requestAnimationFrame(loop);
+
+  return {
+    stop: () => {
+      running = false;
+      cancelAnimationFrame(rafId);
+      try { stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+      try { landmarker.close(); } catch (_) {}
+      video.remove();
+      lastWritten.clear();
+    },
+  };
+}
+
+function stopLiveCapture(capture) {
+  if (capture?.stop) capture.stop();
 }
