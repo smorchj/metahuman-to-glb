@@ -97,6 +97,71 @@ def _delete_hidden_meshes() -> list[str]:
     return removed
 
 
+# MetaHuman normal maps are authored in DirectX convention (+Y down). The glTF
+# 2.0 spec mandates OpenGL convention (+Y up) for normal maps, so every glTF-
+# compliant renderer (three.js, Babylon, Bevy, Godot, model-viewer, Unity's
+# glTF importer) reads the G channel as +Y up. Without this flip, surface
+# detail renders inverted — pores read as bumps, wrinkles as ridges.
+#
+# Match on filename because that's what stage 02 also keys on when classifying
+# textures into the "normal" / "detail_normal" slots. Keeping the list in sync
+# with stage 02's `_classify_texture` by hand is a stage-boundary cost we
+# accept (no cross-stage imports).
+_NORMAL_FILENAME_HINTS = (
+    "_n.tga", "_n.png",
+    "_normal.tga", "_normal.png",
+    "_normal_map",
+    "normal_main",
+)
+# Placeholder/utility normal-ish textures referenced by MH materials but not
+# actually wired as normals in the exported materials — skip so we don't touch
+# data we don't need to.
+_NORMAL_FILENAME_SKIP = (
+    "t_flatnormal.tga",
+    "t_skinmicronormal.tga",
+)
+
+
+def _is_normal_image(img) -> bool:
+    name = (img.name or "").lower()
+    if any(s in name for s in _NORMAL_FILENAME_SKIP):
+        return False
+    return any(h in name for h in _NORMAL_FILENAME_HINTS)
+
+
+def _flip_g_inplace(img) -> bool:
+    """Flip the G channel of an image in place (DX -> OpenGL normal convention).
+    Uses foreach_get/foreach_set with numpy — direct pixel list access is orders
+    of magnitude slower on 2K+ textures."""
+    import numpy as np
+    if img.size[0] == 0 or img.size[1] == 0:
+        return False
+    w, h = img.size[0], img.size[1]
+    ch = 4  # Blender images expose 4 float channels regardless of source
+    buf = np.empty(w * h * ch, dtype=np.float32)
+    try:
+        img.pixels.foreach_get(buf)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[stage03][normal] foreach_get failed for {img.name}: {exc}", flush=True)
+        return False
+    buf[1::4] = 1.0 - buf[1::4]
+    img.pixels.foreach_set(buf)
+    img.update()
+    return True
+
+
+def _flip_normal_maps_g() -> int:
+    """Flip G on every normal-map image in the scene (UE is DX, glTF is GL)."""
+    touched = 0
+    for img in bpy.data.images:
+        if not _is_normal_image(img):
+            continue
+        if _flip_g_inplace(img):
+            print(f"[stage03] normal G-flip: {img.name} ({img.size[0]}x{img.size[1]})", flush=True)
+            touched += 1
+    return touched
+
+
 def _downsample_images(max_px: int) -> int:
     """Scale any image texture whose max side > max_px down to max_px (preserving aspect)."""
     touched = 0
@@ -238,6 +303,11 @@ def main() -> int:
         removed = _delete_hidden_meshes()
         print(f"[stage03] removed {len(removed)} hidden meshes", flush=True)
 
+        # Flip DX -> GL on normal maps BEFORE downsample so both the embedded
+        # GLB textures and the sidecar PNGs end up spec-compliant in one pass.
+        flipped = _flip_normal_maps_g()
+        print(f"[stage03] flipped G on {flipped} normal maps (DX -> GL)", flush=True)
+
         downsampled = _downsample_images(max_px)
         print(f"[stage03] downsampled {downsampled} textures (max {max_px}px)", flush=True)
 
@@ -288,6 +358,7 @@ def main() -> int:
             "material_count": len(materials),
             "image_count": len(images),
             "max_texture_px_used": max_img_px,
+            "normal_maps_g_flipped": flipped,
             "draco": draco,
             "tri_budget": tri_budget,
             "over_budget": tri_count > tri_budget,

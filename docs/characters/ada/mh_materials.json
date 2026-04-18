@@ -38,6 +38,97 @@
       }
     },
     {
+      "material_name": "f_med_nrw_btm_slacks_nrm_cinematic_lambert3",
+      "mesh": "f_med_nrw_btm_slacks_nrm_Cinematic_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Common/Materials/Slacks/M_btm_slacks.M_btm_slacks",
+      "kind": "cloth",
+      "face_slot": null,
+      "params": {
+        "diffuse_color_1": [
+          0.030937999486923218,
+          0.03125,
+          0.030966000631451607,
+          1.0
+        ],
+        "diffuse_color_2": [
+          0.06770800054073334,
+          0.06770800054073334,
+          0.06770800054073334,
+          0.0
+        ],
+        "roughness": 0.75,
+        "metallic": 0.0,
+        "ao_amount": 0.85,
+        "detail_tiling": 200.0,
+        "detail_strength": 0.5,
+        "macro_tiling": 3.0,
+        "macro_strength": 0.07000000029802322,
+        "mask_channel": "r"
+      },
+      "textures": {
+        "detail_normal": "micro_knit_front_N",
+        "macro_overlay": "textures/macro_heather_04_Vertical.png",
+        "normal": "textures/btm_slacks_N.png",
+        "mask": "textures/btm_slacks_Mask.png",
+        "ao": "textures/btm_slacks_AO.png"
+      }
+    },
+    {
+      "material_name": "f_med_nrw_top_shirt_nrm_cinematic_lambert1",
+      "mesh": "f_med_nrw_top_shirt_nrm_Cinematic_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Common/Materials/Shirt/Female/M_f_top_shirt.M_f_top_shirt",
+      "kind": "cloth",
+      "face_slot": null,
+      "params": {
+        "diffuse_color_1": [
+          0.0625,
+          0.0625,
+          0.0625,
+          1.0
+        ],
+        "diffuse_color_2": [
+          0.21875,
+          0.21875,
+          0.21875,
+          1.0
+        ],
+        "roughness": 0.30000001192092896,
+        "metallic": 0.0,
+        "ao_amount": 0.5,
+        "detail_tiling": 220.0,
+        "detail_strength": 1.0,
+        "macro_tiling": 3.0,
+        "macro_strength": 0.5,
+        "mask_channel": "r"
+      },
+      "textures": {
+        "detail_diffuse": "textures/micro_weave_denim_diffuse.png",
+        "detail_normal": "micro_pp_oxford_N",
+        "normal": "textures/f_top_shirt_N.png",
+        "mask": "textures/f_top_shirt_Mask.png",
+        "ao": "textures/f_top_shirt_AO.png"
+      }
+    },
+    {
+      "material_name": "f_med_nrw_body_MI_BodySynthesized",
+      "mesh": "f_med_nrw_body_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Ada/Materials/MI_BodySynthesized.MI_BodySynthesized",
+      "kind": "skin",
+      "face_slot": null,
+      "params": {
+        "roughness_bias": 0.0
+      },
+      "textures": {
+        "basecolor": "textures/BodyBaseColor.png",
+        "roughness": "textures/female_body_roughness_map.png",
+        "normal": "textures/female_body_normal_map.png",
+        "ao": "textures/female_body_cavity_map.png"
+      }
+    },
+    {
       "material_name": "ada_facemesh_head_shader_shader",
       "mesh": "Ada_FaceMesh_LOD0",
       "slot_index": 0,
@@ -373,97 +464,6 @@
       },
       "textures": {
         "ao": "textures/FaceCavity_MAIN.png"
-      }
-    },
-    {
-      "material_name": "f_med_nrw_top_shirt_nrm_cinematic_lambert1",
-      "mesh": "f_med_nrw_top_shirt_nrm_Cinematic_LOD0",
-      "slot_index": 0,
-      "material_source": "/Game/MetaHumans/Common/Materials/Shirt/Female/M_f_top_shirt.M_f_top_shirt",
-      "kind": "cloth",
-      "face_slot": null,
-      "params": {
-        "diffuse_color_1": [
-          0.0625,
-          0.0625,
-          0.0625,
-          1.0
-        ],
-        "diffuse_color_2": [
-          0.21875,
-          0.21875,
-          0.21875,
-          1.0
-        ],
-        "roughness": 0.30000001192092896,
-        "metallic": 0.0,
-        "ao_amount": 0.5,
-        "detail_tiling": 220.0,
-        "detail_strength": 1.0,
-        "macro_tiling": 3.0,
-        "macro_strength": 0.5,
-        "mask_channel": "r"
-      },
-      "textures": {
-        "detail_diffuse": "textures/micro_weave_denim_diffuse.png",
-        "detail_normal": "micro_pp_oxford_N",
-        "normal": "textures/f_top_shirt_N.png",
-        "mask": "textures/f_top_shirt_Mask.png",
-        "ao": "textures/f_top_shirt_AO.png"
-      }
-    },
-    {
-      "material_name": "f_med_nrw_btm_slacks_nrm_cinematic_lambert3",
-      "mesh": "f_med_nrw_btm_slacks_nrm_Cinematic_LOD0",
-      "slot_index": 0,
-      "material_source": "/Game/MetaHumans/Common/Materials/Slacks/M_btm_slacks.M_btm_slacks",
-      "kind": "cloth",
-      "face_slot": null,
-      "params": {
-        "diffuse_color_1": [
-          0.030937999486923218,
-          0.03125,
-          0.030966000631451607,
-          1.0
-        ],
-        "diffuse_color_2": [
-          0.06770800054073334,
-          0.06770800054073334,
-          0.06770800054073334,
-          0.0
-        ],
-        "roughness": 0.75,
-        "metallic": 0.0,
-        "ao_amount": 0.85,
-        "detail_tiling": 200.0,
-        "detail_strength": 0.5,
-        "macro_tiling": 3.0,
-        "macro_strength": 0.07000000029802322,
-        "mask_channel": "r"
-      },
-      "textures": {
-        "detail_normal": "micro_knit_front_N",
-        "macro_overlay": "textures/macro_heather_04_Vertical.png",
-        "normal": "textures/btm_slacks_N.png",
-        "mask": "textures/btm_slacks_Mask.png",
-        "ao": "textures/btm_slacks_AO.png"
-      }
-    },
-    {
-      "material_name": "f_med_nrw_body_MI_BodySynthesized",
-      "mesh": "f_med_nrw_body_LOD0",
-      "slot_index": 0,
-      "material_source": "/Game/MetaHumans/Ada/Materials/MI_BodySynthesized.MI_BodySynthesized",
-      "kind": "skin",
-      "face_slot": null,
-      "params": {
-        "roughness_bias": 0.0
-      },
-      "textures": {
-        "basecolor": "textures/BodyBaseColor.png",
-        "roughness": "textures/female_body_roughness_map.png",
-        "normal": "textures/female_body_normal_map.png",
-        "ao": "textures/female_body_cavity_map.png"
       }
     },
     {

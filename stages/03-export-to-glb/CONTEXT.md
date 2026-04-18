@@ -21,6 +21,10 @@ compressed with Draco.
 3. `export_glb.py`:
    - Opens `<id>.blend`.
    - Deletes hidden (non-LOD0) meshes so only LOD0 geometry ships.
+   - Flips the G channel on every normal-map image in place (UE authors
+     normals in DirectX convention with +Y down; glTF 2.0 mandates OpenGL
+     convention with +Y up). Matched by filename against the same hints
+     stage 02 uses to classify normals.
    - Downsamples any image texture whose largest dimension exceeds
      `glb_constraints.max_texture_px` (default 2048), in place.
    - Optionally joins the per-FBX armatures into one (v1: kept separate;
@@ -57,6 +61,7 @@ compressed with Draco.
   "material_count": 22,
   "image_count": 18,
   "max_texture_px_used": 2048,
+  "normal_maps_g_flipped": 6,
   "draco": true,
   "tri_budget": 60000,
   "over_budget": false,
