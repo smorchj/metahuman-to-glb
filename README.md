@@ -14,7 +14,7 @@ the stage's contract, runs the launcher, and updates a per-character manifest.
 
 ## Live demo
 
-`https://<your-username>.github.io/<repo-name>/` — gallery built from
+**https://smorchj.github.io/metahuman-to-glb/** — gallery built from
 `docs/` on every push to `main`.
 
 ## Status
