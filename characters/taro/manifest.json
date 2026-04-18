@@ -1,0 +1,37 @@
+{
+  "character_id": "taro",
+  "source": "engine_mhc",
+  "ue_version": "5.6.1",
+  "mh_folder": "/Game/MetaHumans/Taro",
+  "archetype": null,
+  "stages": {
+    "01_fbx_export": {
+      "status": "done",
+      "started_at": "2026-04-18T08:09:06Z",
+      "completed_at": "2026-04-18T08:09:06Z",
+      "output_dir": "01-fbx/",
+      "errors": []
+    },
+    "02_blender_setup": {
+      "status": "done",
+      "started_at": "2026-04-18T08:11:00Z",
+      "completed_at": "2026-04-18T08:11:00Z",
+      "output_dir": "02-blend/",
+      "errors": []
+    },
+    "03_glb_export": {
+      "status": "done",
+      "started_at": "2026-04-18T08:12:40Z",
+      "completed_at": "2026-04-18T08:12:40Z",
+      "output_dir": "03-glb/",
+      "errors": []
+    },
+    "04_webview_build": {
+      "status": "done",
+      "started_at": "2026-04-18T08:13:33Z",
+      "completed_at": "2026-04-18T08:13:33Z",
+      "output_dir": "../../docs/characters/",
+      "errors": []
+    }
+  }
+}

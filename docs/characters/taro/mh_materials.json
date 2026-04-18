@@ -1,0 +1,531 @@
+{
+  "character_id": "taro",
+  "version": 1,
+  "materials": [
+    {
+      "material_name": "m_med_nrw_body_MI_BodySynthesized",
+      "mesh": "m_med_nrw_body_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Taro/Materials/MI_BodySynthesized.MI_BodySynthesized",
+      "kind": "skin",
+      "face_slot": null,
+      "params": {
+        "roughness_bias": 0.0
+      },
+      "textures": {
+        "ao": "textures/male_body_cavity_map.png",
+        "normal": "textures/male_body_normal_map.png",
+        "roughness": "textures/male_body_roughness_map.png",
+        "basecolor": "textures/BodyBaseColor.png"
+      }
+    },
+    {
+      "material_name": "taro_facemesh_head_shader_shader",
+      "mesh": "Taro_FaceMesh_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Taro/Face/Materials/Baked/MI_HeadSynthesized_Baked.MI_HeadSynthesized_Baked",
+      "kind": "skin",
+      "face_slot": "head_skin",
+      "params": {
+        "roughness_bias": 0.0
+      },
+      "textures": {
+        "roughness": "textures/FaceRoughness_MAIN.png",
+        "normal": "textures/FaceNormal_MAIN.png",
+        "basecolor": "textures/FaceColor_MAIN.png",
+        "ao": "textures/FaceCavity_MAIN.png"
+      }
+    },
+    {
+      "material_name": "taro_facemesh_teeth_shader_shader",
+      "mesh": "Taro_FaceMesh_LOD0",
+      "slot_index": 1,
+      "material_source": "/Game/MetaHumans/Taro/Materials/M_TeethCharacterCreator_Inst.M_TeethCharacterCreator_Inst",
+      "kind": "face_accessory",
+      "face_slot": "teeth",
+      "params": {
+        "base_color": [
+          0.85,
+          0.78,
+          0.7,
+          1.0
+        ],
+        "roughness": 0.35
+      },
+      "textures": {}
+    },
+    {
+      "material_name": "taro_facemesh_saliva_shader_shader",
+      "mesh": "Taro_FaceMesh_LOD0",
+      "slot_index": 2,
+      "material_source": "/Game/MetaHumans/Common/Face/Materials/MI_lacrimal_fluid_Inst.MI_lacrimal_fluid_Inst",
+      "kind": "face_accessory",
+      "face_slot": "wet",
+      "params": {
+        "base_color": [
+          0.9,
+          0.85,
+          0.8,
+          1.0
+        ],
+        "roughness": 0.5
+      },
+      "textures": {}
+    },
+    {
+      "material_name": "taro_facemesh_eyeLeft_shader_shader",
+      "mesh": "Taro_FaceMesh_LOD0",
+      "slot_index": 3,
+      "material_source": "/Game/MetaHumans/Taro/Face/Materials/MI_EyeRefractive_Inst_L.MI_EyeRefractive_Inst_L",
+      "kind": "face_accessory",
+      "face_slot": "eye_refractive",
+      "params": {
+        "eye_pole_uv": [
+          0.49003834330965246,
+          0.5073478841762554
+        ],
+        "uv_scale": 4.0,
+        "iris_color": [
+          0.176,
+          0.077,
+          0.045,
+          1.0
+        ],
+        "iris_dark": [
+          0.036,
+          0.015,
+          0.0,
+          1.0
+        ],
+        "sclera_color": [
+          0.92,
+          0.9,
+          0.86,
+          1.0
+        ],
+        "pupil_color": [
+          0.005,
+          0.005,
+          0.005,
+          1.0
+        ],
+        "vein_color": [
+          0.62,
+          0.18,
+          0.15,
+          1.0
+        ],
+        "veins_power": 0.6143616437911987,
+        "limbus_start": 0.095,
+        "iris_radius_in": 0.131,
+        "iris_radius_out": 0.146,
+        "pupil_radius_in": 0.022,
+        "pupil_radius_out": 0.046,
+        "fibril_from_min": 0.25,
+        "fibril_from_max": 0.75,
+        "fibril_to_min": 0.65,
+        "fibril_to_max": 1.15
+      },
+      "textures": {
+        "basecolor": "textures/T_Iris_A_H.png"
+      }
+    },
+    {
+      "material_name": "taro_facemesh_eyeRight_shader_shader",
+      "mesh": "Taro_FaceMesh_LOD0",
+      "slot_index": 4,
+      "material_source": "/Game/MetaHumans/Taro/Face/Materials/MI_EyeRefractive_Inst_R.MI_EyeRefractive_Inst_R",
+      "kind": "face_accessory",
+      "face_slot": "eye_refractive",
+      "params": {
+        "eye_pole_uv": [
+          0.5085865981700448,
+          0.5095153517071244
+        ],
+        "uv_scale": 4.0,
+        "iris_color": [
+          0.176,
+          0.077,
+          0.045,
+          1.0
+        ],
+        "iris_dark": [
+          0.036,
+          0.015,
+          0.0,
+          1.0
+        ],
+        "sclera_color": [
+          0.92,
+          0.9,
+          0.86,
+          1.0
+        ],
+        "pupil_color": [
+          0.005,
+          0.005,
+          0.005,
+          1.0
+        ],
+        "vein_color": [
+          0.62,
+          0.18,
+          0.15,
+          1.0
+        ],
+        "veins_power": 0.6143616437911987,
+        "limbus_start": 0.095,
+        "iris_radius_in": 0.131,
+        "iris_radius_out": 0.146,
+        "pupil_radius_in": 0.022,
+        "pupil_radius_out": 0.046,
+        "fibril_from_min": 0.25,
+        "fibril_from_max": 0.75,
+        "fibril_to_min": 0.65,
+        "fibril_to_max": 1.15
+      },
+      "textures": {
+        "basecolor": "textures/T_Iris_A_H.png"
+      }
+    },
+    {
+      "material_name": "taro_facemesh_eyeshell_shader_shader",
+      "mesh": "Taro_FaceMesh_LOD0",
+      "slot_index": 5,
+      "material_source": "/Game/MetaHumans/Common/Face/Materials/MI_EyeOcclusion_Inst.MI_EyeOcclusion_Inst",
+      "kind": "face_accessory",
+      "face_slot": "eye_occlusion",
+      "params": {
+        "base_color": [
+          0.9,
+          0.85,
+          0.8,
+          1.0
+        ],
+        "roughness": 0.5
+      },
+      "textures": {}
+    },
+    {
+      "material_name": "taro_facemesh_eyelashes_shader_shader",
+      "mesh": "Taro_FaceMesh_LOD0",
+      "slot_index": 6,
+      "material_source": "/Game/MetaHumans/Taro/Materials/M_EyelashLowerLODs_Inst.M_EyelashLowerLODs_Inst",
+      "kind": "face_accessory",
+      "face_slot": "eyelashes",
+      "params": {
+        "base_color": [
+          0.05,
+          0.04,
+          0.03,
+          1.0
+        ],
+        "roughness": 0.7,
+        "alpha_clip": true
+      },
+      "textures": {
+        "alpha": "textures/Eyelashes_S_Sparse_Coverage.png"
+      }
+    },
+    {
+      "material_name": "taro_facemesh_eyeEdge_shader_shader",
+      "mesh": "Taro_FaceMesh_LOD0",
+      "slot_index": 7,
+      "material_source": "/Game/MetaHumans/Common/Face/Materials/MI_lacrimal_fluid_Inst.MI_lacrimal_fluid_Inst",
+      "kind": "face_accessory",
+      "face_slot": "wet",
+      "params": {
+        "base_color": [
+          0.9,
+          0.85,
+          0.8,
+          1.0
+        ],
+        "roughness": 0.5
+      },
+      "textures": {}
+    },
+    {
+      "material_name": "taro_facemesh_cartilage_shader_shader",
+      "mesh": "Taro_FaceMesh_LOD0",
+      "slot_index": 8,
+      "material_source": "/Game/MetaHumans/Common/Face/Materials/M_Cartilage.M_Cartilage",
+      "kind": "face_accessory",
+      "face_slot": "cartilage",
+      "params": {
+        "base_color": [
+          0.9,
+          0.85,
+          0.8,
+          1.0
+        ],
+        "roughness": 0.5
+      },
+      "textures": {}
+    },
+    {
+      "material_name": "taro_facemesh_head_LOD1_shader_shader",
+      "mesh": "Taro_FaceMesh_LOD0",
+      "slot_index": 9,
+      "material_source": "/Game/MetaHumans/Taro/Face/Materials/Baked/MI_HeadSynthesized_Baked_LOD1.MI_HeadSynthesized_Baked_LOD1",
+      "kind": "skin",
+      "face_slot": "head_skin",
+      "params": {
+        "roughness_bias": 0.0
+      },
+      "textures": {
+        "roughness": "textures/FaceRoughness_MAIN.png",
+        "normal": "textures/FaceNormal_MAIN.png",
+        "basecolor": "textures/FaceColor_MAIN.png",
+        "ao": "textures/FaceCavity_MAIN.png"
+      }
+    },
+    {
+      "material_name": "taro_facemesh_eyelashes_HiLOD_shader_shader",
+      "mesh": "Taro_FaceMesh_LOD0",
+      "slot_index": 10,
+      "material_source": "/Game/MetaHumans/Taro/Materials/M_EyeLash_HigherLODs_Inst.M_EyeLash_HigherLODs_Inst",
+      "kind": "face_accessory",
+      "face_slot": "eyelashes",
+      "params": {
+        "base_color": [
+          0.05,
+          0.04,
+          0.03,
+          1.0
+        ],
+        "roughness": 0.7,
+        "alpha_clip": true
+      },
+      "textures": {
+        "alpha": "textures/Eyelashes_S_Sparse_Coverage.png"
+      }
+    },
+    {
+      "material_name": "taro_facemesh_head_LOD2_shader_shader",
+      "mesh": "Taro_FaceMesh_LOD0",
+      "slot_index": 11,
+      "material_source": "/Game/MetaHumans/Taro/Face/Materials/Baked/MI_HeadSynthesized_Baked_LOD2.MI_HeadSynthesized_Baked_LOD2",
+      "kind": "skin",
+      "face_slot": "head_skin",
+      "params": {
+        "roughness_bias": 0.0
+      },
+      "textures": {
+        "roughness": "textures/FaceRoughness_MAIN.png",
+        "normal": "textures/FaceNormal_MAIN.png",
+        "basecolor": "textures/FaceColor_MAIN.png",
+        "ao": "textures/FaceCavity_MAIN.png"
+      }
+    },
+    {
+      "material_name": "taro_facemesh_head_LOD3_shader_shader",
+      "mesh": "Taro_FaceMesh_LOD0",
+      "slot_index": 12,
+      "material_source": "/Game/MetaHumans/Taro/Face/Materials/Baked/MI_HeadSynthesized_Baked_LOD3.MI_HeadSynthesized_Baked_LOD3",
+      "kind": "skin",
+      "face_slot": "head_skin",
+      "params": {
+        "roughness_bias": 0.0
+      },
+      "textures": {
+        "roughness": "textures/FaceRoughness_MAIN.png",
+        "normal": "textures/FaceNormal_MAIN.png",
+        "basecolor": "textures/FaceColor_MAIN.png",
+        "ao": "textures/FaceCavity_MAIN.png"
+      }
+    },
+    {
+      "material_name": "taro_facemesh_head_LOD4_shader_shader",
+      "mesh": "Taro_FaceMesh_LOD0",
+      "slot_index": 13,
+      "material_source": "/Game/MetaHumans/Taro/Face/Materials/Baked/MI_HeadSynthesized_Baked_LOD4.MI_HeadSynthesized_Baked_LOD4",
+      "kind": "skin",
+      "face_slot": "head_skin",
+      "params": {
+        "roughness_bias": 0.0
+      },
+      "textures": {
+        "roughness": "textures/FaceRoughness_MAIN.png",
+        "normal": "textures/FaceNormal_MAIN.png",
+        "basecolor": "textures/FaceColor_MAIN.png",
+        "ao": "textures/FaceCavity_MAIN.png"
+      }
+    },
+    {
+      "material_name": "taro_facemesh_head_LOD57_shader_shader",
+      "mesh": "Taro_FaceMesh_LOD0",
+      "slot_index": 14,
+      "material_source": "/Game/MetaHumans/Taro/Face/Materials/Baked/MI_HeadSynthesized_Baked_LOD5.MI_HeadSynthesized_Baked_LOD5",
+      "kind": "skin",
+      "face_slot": "head_skin",
+      "params": {
+        "roughness_bias": 0.0
+      },
+      "textures": {
+        "ao": "textures/FaceCavity_MAIN.png"
+      }
+    },
+    {
+      "material_name": "m_med_nrw_shs_runningshoes_cinematic_M_shoes",
+      "mesh": "m_med_nrw_shs_runningshoes_Cinematic_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Common/Materials/RunningShoes/M_shs_runningshoes.M_shs_runningshoes",
+      "kind": "cloth",
+      "face_slot": null,
+      "params": {
+        "diffuse_color_1": [
+          0.018079999834299088,
+          0.3330810070037842,
+          0.7447919845581055,
+          1.0
+        ],
+        "diffuse_color_2": [
+          0.640625,
+          0.640625,
+          0.640625,
+          0.0
+        ],
+        "roughness": 0.20000000298023224,
+        "metallic": 0.0,
+        "ao_amount": 1.0,
+        "detail_tiling": 1.0,
+        "detail_strength": 0.30000001192092896,
+        "macro_tiling": 1.0,
+        "macro_strength": 0.20000000298023224,
+        "mask_channel": "r"
+      },
+      "textures": {
+        "ao": "textures/shs_runningshoes_AO.png",
+        "mask": "textures/shs_runningshoes_Mask.png",
+        "normal": "textures/shs_runningshoes_N.png",
+        "macro_overlay": "textures/macro_heather_04.png",
+        "detail_normal": "macro_heather_04_normal"
+      }
+    },
+    {
+      "material_name": "m_med_nrw_btm_jeans_nrm_cinematic_lambert3",
+      "mesh": "m_med_nrw_btm_jeans_nrm_Cinematic_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Common/Materials/Jeans/M_btm_jeans_nrm.M_btm_jeans_nrm",
+      "kind": "cloth",
+      "face_slot": null,
+      "params": {
+        "diffuse_color_1": [
+          0.015995999798178673,
+          0.015995999798178673,
+          0.015995999798178673,
+          1.0
+        ],
+        "diffuse_color_2": [
+          0.010329999960958958,
+          0.03954600170254707,
+          0.0930590033531189,
+          1.0
+        ],
+        "roughness": 0.75,
+        "metallic": 0.0,
+        "ao_amount": 0.85,
+        "detail_tiling": 80.0,
+        "detail_strength": 0.6,
+        "macro_tiling": 3.0,
+        "macro_strength": 0.5,
+        "mask_channel": "r"
+      },
+      "textures": {
+        "ao": "textures/btm_jeans_nrm_AO.png",
+        "mask": "textures/btm_jeans_nrm_Mask.png",
+        "normal": "textures/btm_jeans_nrm_N.png",
+        "detail_normal": "micro_jeans_tile_N",
+        "roughness": "textures/btm_jeans_nrm_roughness_mask.png"
+      }
+    },
+    {
+      "material_name": "m_med_nrw_top_hoodie_nrm_cinematic_lambert1",
+      "mesh": "m_med_nrw_top_hoodie_nrm_Cinematic_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Common/Materials/Hoodie/M_top_hoodie.M_top_hoodie",
+      "kind": "cloth",
+      "face_slot": null,
+      "params": {
+        "diffuse_color_1": [
+          0.038203999400138855,
+          0.038203999400138855,
+          0.038203999400138855,
+          1.0
+        ],
+        "diffuse_color_2": [
+          0.038203999400138855,
+          0.25818300247192383,
+          1.0,
+          1.0
+        ],
+        "roughness": 0.75,
+        "metallic": 0.0,
+        "ao_amount": 0.85,
+        "detail_tiling": 75.0,
+        "detail_strength": 0.20000000298023224,
+        "macro_tiling": 6.0,
+        "macro_strength": 0.10000000149011612,
+        "mask_channel": "r"
+      },
+      "textures": {
+        "macro_overlay": "textures/macro_heather_04.png",
+        "ao": "textures/top_hoodie_AO.png",
+        "mask": "textures/top_hoodie_Mask.png",
+        "normal": "textures/top_hoodie_N.png",
+        "detail_diffuse": "textures/micro_doubleKnit_front_AOHCA_M.png",
+        "detail_normal": "micro_knit_front_N"
+      }
+    },
+    {
+      "material_name": "eyebrows_l_scraggly_cardsmesh_group0_lod0_lambert1",
+      "mesh": "Eyebrows_L_Scraggly_CardsMesh_Group0_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Taro/Materials/MI_Facial_Hair.MI_Facial_Hair",
+      "kind": "hair",
+      "face_slot": null,
+      "params": {
+        "base_color": [
+          0.02,
+          0.015,
+          0.01,
+          1.0
+        ],
+        "roughness": 0.6116719841957092,
+        "alpha_clip": true,
+        "alpha_channel": "r",
+        "alpha_stem": "Eyebrows_L_Scraggly_CardsAtlas_Attribute",
+        "ignore_gltf_map": true
+      },
+      "textures": {
+        "alpha_r": "textures/Eyebrows_L_Scraggly_CardsAtlas_Attribute.png"
+      }
+    },
+    {
+      "material_name": "goatee_s_chinstrap_cardsmesh_group0_lod0_MaterialSlot",
+      "mesh": "Goatee_S_ChinStrap_CardsMesh_Group0_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Taro/Materials/MI_Hair_Cards.MI_Hair_Cards",
+      "kind": "hair",
+      "face_slot": null,
+      "params": {
+        "base_color": [
+          0.03886863069904712,
+          0.01950521012985891,
+          0.010971221748244699,
+          1.0
+        ],
+        "roughness": 0.3700000047683716,
+        "alpha_clip": true,
+        "alpha_channel": "r",
+        "alpha_stem": "Goatee_S_ChinStrap_CardsAtlas_Attribute",
+        "ignore_gltf_map": true
+      },
+      "textures": {
+        "alpha_r": "textures/Goatee_S_ChinStrap_CardsAtlas_Attribute.png",
+        "alpha": "Hair_M_SideSweptFringe_RootUVSeedCoverage"
+      }
+    }
+  ]
+}

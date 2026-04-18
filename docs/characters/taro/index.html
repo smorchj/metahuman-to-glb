@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>taro — MetaHuman viewer</title>
+  <link rel="stylesheet" href="../../assets/style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body class="viewer">
+  <header>
+    <a class="back" href="../../index.html">&larr; gallery</a>
+    <h1>taro</h1>
+  </header>
+
+  <div id="stage" class="stage"></div>
+
+  <footer>
+    <span>190,784 tris</span>
+    <span>&middot;</span>
+    <span>20.4 MiB</span>
+    <span>&middot;</span>
+    <span>built 2026-04-18T08:13:33Z</span>
+  </footer>
+
+  <script type="module">
+    import { mount } from '../../assets/viewer.js?v=20260418T081333Z';
+    mount(document.getElementById('stage'), {
+      glbUrl: 'taro.glb',
+      mappingUrl: 'mh_materials.json',
+      autoRotate: false,
+      interactive: true,
+    }).then((v) => { window.__viewer = v; }).catch((err) => {
+      console.error('[viewer] mount failed', err);
+      document.getElementById('stage').innerHTML =
+        '<pre style="color:#f88;padding:16px">' + (err && err.message || err) + '</pre>';
+    });
+  </script>
+</body>
+</html>
