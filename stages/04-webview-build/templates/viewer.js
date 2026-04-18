@@ -19,6 +19,34 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const DRACO_DECODER = 'https://www.gstatic.com/draco/versioned/decoders/1.5.7/';
 
+// Per-character hair-param overrides, layered on top of the shared hair
+// defaults in applyHair / addHairInnerPass. Values dialled in via ?tune=1
+// and pasted here. Add a character whenever its live-tuned sweet spot
+// diverges noticeably from the shared defaults.
+const HAIR_OVERRIDES = {
+  taro: {
+    hair_roughness_floor:    0.63,
+    root_darkening:          0.00,
+    seed_variation:          0.25,
+    hair_roughness_seed_amp: 0.08,
+    anisotropy:              0.63,
+    anisotropy_rotation:    -1.52,
+  },
+};
+
+// Module-level holder for the active character's overrides. Set at mount()
+// time from opts.characterId (preferred) or parsed from the URL path, then
+// read by applyHair / addHairInnerPass.
+let _activeHairOverrides = null;
+
+function _resolveCharacterId(opts) {
+  if (opts && opts.characterId) return String(opts.characterId).toLowerCase();
+  if (typeof window === 'undefined') return null;
+  // URL pattern: /.../characters/<id>/[index.html]
+  const m = window.location.pathname.match(/\/characters\/([^/]+)\/?/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
 export async function mount(container, opts) {
   const {
     glbUrl,
@@ -79,6 +107,13 @@ export async function mount(container, opts) {
   // to a hand-tuned settled rotation at load so they hang naturally without
   // needing to re-bake the GLB.
   applyBoneFixups(gltf.scene);
+
+  // Resolve per-character hair overrides before patching materials.
+  const charId = _resolveCharacterId(opts);
+  _activeHairOverrides = charId ? (HAIR_OVERRIDES[charId] || null) : null;
+  if (_activeHairOverrides) {
+    console.log('[viewer] hair overrides for', charId, _activeHairOverrides);
+  }
 
   let hairMats = [];
   if (mapping) {
@@ -425,6 +460,10 @@ function applyCloth(mat, p, t, loadTex) {
 // ---------------- hair
 
 function applyHair(mat, p, t, loadTex) {
+  // Layer per-character overrides on top of the spec params. Overrides win
+  // over spec (stage 02 doesn't emit these tuning scalars, but if it ever
+  // does, the hand-dialled per-char value should take precedence).
+  if (_activeHairOverrides) p = { ...p, ..._activeHairOverrides };
   // The glTF-carried map is the data-packed hair card atlas (R=strand mask on
   // compact atlases, A=legacy) — NOT albedo. Drop it; color comes from params.
   if (p.ignore_gltf_map) mat.map = null;
@@ -571,7 +610,8 @@ function applyHair(mat, p, t, loadTex) {
 function addHairInnerPass(mesh, outerMat, spec) {
   if (!outerMat?.alphaMap) return;         // nothing to clip against
   if (Array.isArray(mesh.material)) return; // multi-slot hair meshes: skip for now
-  const p = spec.params || {};
+  let p = spec.params || {};
+  if (_activeHairOverrides) p = { ...p, ..._activeHairOverrides };
   const alphaChan = (p.alpha_channel || 'r').toLowerCase();
   const alphaSwz  = ({ r: 'r', g: 'g', b: 'b', a: 'a' }[alphaChan]) || 'r';
   const rootChan = alphaChan === 'a' ? 'r' : 'g';
