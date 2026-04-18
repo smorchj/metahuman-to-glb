@@ -1278,6 +1278,39 @@ function buildBlendshapePanel(container, morphMeshes) {
 // asset float16/1 from Google Storage. Bumping versions should keep the
 // ARKit-52 category set stable (documented in MediaPipe's FaceLandmarker spec).
 
+// Per-key calibration for MediaPipe → ARKit mapping. MediaPipe's trained
+// blendshape head is noticeably biased:
+//   eyeBlinkLeft/Right   — has ~0.2–0.35 floor at rest (baseline noise from
+//                          mesh-fit regression), so the avatar looks sleepy
+//                          with eyes always half-closed. Subtract a floor,
+//                          then rescale so normal blinks still hit ~1.
+//   brow* / cheek* /     — under-report, need 2–3× gain so expressions read.
+//     noseSneer*
+// Applied as: clamp((score - bias) * gain, 0, 1)
+// Tuned against a default iPhone front camera + neutral face at rest.
+const CAPTURE_CALIBRATION = {
+  eyeBlinkLeft:       { bias: 0.35, gain: 1.8 },
+  eyeBlinkRight:      { bias: 0.35, gain: 1.8 },
+  eyeSquintLeft:      { bias: 0.10, gain: 1.5 },
+  eyeSquintRight:     { bias: 0.10, gain: 1.5 },
+  browInnerUp:        { bias: 0.05, gain: 2.5 },
+  browOuterUpLeft:    { bias: 0.05, gain: 2.5 },
+  browOuterUpRight:   { bias: 0.05, gain: 2.5 },
+  browDownLeft:       { bias: 0.05, gain: 2.5 },
+  browDownRight:      { bias: 0.05, gain: 2.5 },
+  cheekSquintLeft:    { bias: 0.00, gain: 1.8 },
+  cheekSquintRight:   { bias: 0.00, gain: 1.8 },
+  noseSneerLeft:      { bias: 0.05, gain: 2.0 },
+  noseSneerRight:     { bias: 0.05, gain: 2.0 },
+};
+
+function calibrateScore(name, raw) {
+  const c = CAPTURE_CALIBRATION[name];
+  if (!c) return raw;
+  const v = (raw - c.bias) * c.gain;
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
 const MEDIAPIPE_VERSION = '0.10.14';
 const MEDIAPIPE_BUNDLE  = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/vision_bundle.mjs`;
 const MEDIAPIPE_WASM    = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`;
@@ -1350,7 +1383,7 @@ async function startLiveCapture({ container, morphMeshes, setInfluence, statusEl
           const seen = new Set();
           for (const cat of bs) {
             if (cat.categoryName === '_neutral') continue;
-            setInfluence(cat.categoryName, cat.score);
+            setInfluence(cat.categoryName, calibrateScore(cat.categoryName, cat.score));
             seen.add(cat.categoryName);
           }
           // Zero any keys we set last frame but didn't see this frame.
