@@ -80,12 +80,23 @@ export async function mount(container, opts) {
   // needing to re-bake the GLB.
   applyBoneFixups(gltf.scene);
 
+  let hairMats = [];
   if (mapping) {
     try {
-      patchMaterials(gltf.scene, mapping, new URL(mappingUrl, window.location.href));
+      const ctx = patchMaterials(gltf.scene, mapping, new URL(mappingUrl, window.location.href));
+      hairMats = ctx?.hairMats || [];
     } catch (err) {
       console.warn('[viewer] material patch failed:', err);
     }
+  }
+
+  // Hair live-tuning panel: off by default; opts.tune === true or ?tune=1 in
+  // the URL enables it. Sliders write directly to shader uniforms / material
+  // props, so no rebuild needed when dialling.
+  const tuneOn = opts.tune === true ||
+                 (typeof window !== 'undefined' && /[?&]tune=1/.test(window.location.search));
+  if (tuneOn && hairMats.length > 0) {
+    buildHairTunePanel(container, hairMats);
   }
 
   autoFrame(camera, controls, gltf.scene);
@@ -270,11 +281,15 @@ function patchMaterials(root, mapping, baseUrl) {
       }
     });
   });
+  const hairMats = [];
+  for (const { outerMat } of hairTwoPass) hairMats.push(outerMat);
   for (const { mesh, outerMat, spec } of hairTwoPass) {
-    addHairInnerPass(mesh, outerMat, spec);
+    const innerMat = addHairInnerPass(mesh, outerMat, spec);
+    if (innerMat) hairMats.push(innerMat);
   }
   console.log('[viewer] patched', counts.matched, 'matched /', counts.skipped,
               'skipped', counts.byKind, '/ hair two-pass:', hairTwoPass.length);
+  return { hairMats };
 }
 
 function applySpec(mat, spec, loadTex) {
@@ -447,9 +462,12 @@ function applyHair(mat, p, t, loadTex) {
   const tangent = tangentUrl ? loadTex(tangentUrl, { srgb: false }) : null;
   if (tangent && 'anisotropy' in mat) {
     mat.anisotropyMap = tangent;
-    mat.anisotropy = typeof p.anisotropy === 'number' ? p.anisotropy : 0.8;
+    // Dialled-in defaults: 0.44 strength is enough streak without crushing
+    // the base spec, -1.09 rad rotation aligns the highlight with MH strand
+    // direction (the tangent atlas RG convention is 90° off three.js').
+    mat.anisotropy = typeof p.anisotropy === 'number' ? p.anisotropy : 0.44;
     mat.anisotropyRotation = typeof p.anisotropy_rotation === 'number'
-                             ? p.anisotropy_rotation : 0.0;
+                             ? p.anisotropy_rotation : -1.09;
   }
 
   const alphaChan = (p.alpha_channel || 'r').toLowerCase();
@@ -463,13 +481,16 @@ function applyHair(mat, p, t, loadTex) {
   // alpha=A  → atlas is legacy           → root=R, seed=B
   const rootChan = alphaChan === 'a' ? 'r' : 'g';
   const seedChan = 'b';
-  const rootDark = typeof p.root_darkening === 'number' ? p.root_darkening : 0.35;
-  const seedAmp  = typeof p.seed_variation === 'number' ? p.seed_variation : 0.25;
-  // Specular control — MH hair MIs ship roughness as low as 0.37 which yields
-  // sharp isotropic pinpoints in three.js (the UE shader compensates via
-  // anisotropic tangent sampling that we don't have). Floor it high and let
-  // the seed channel modulate per-strand so highlights break up naturally.
-  const roughFloor = typeof p.hair_roughness_floor === 'number' ? p.hair_roughness_floor : 0.0;
+  // Baked defaults, dialled in via the live hair panel.
+  //   root dark   = 0.00   (flat tone; MH's baked root shadow already reads
+  //                         in the synth color, extra darkening looked muddy)
+  //   seed tint   = 0.36   (strong per-strand brightness variance)
+  //   rough floor = 0.55   (below skin's 0.42 but high enough to kill the
+  //                         pinpoint hotspots from MI roughness=0.37)
+  //   seed rough  = 0.08
+  const rootDark = typeof p.root_darkening === 'number' ? p.root_darkening : 0.0;
+  const seedAmp  = typeof p.seed_variation === 'number' ? p.seed_variation : 0.36;
+  const roughFloor = typeof p.hair_roughness_floor === 'number' ? p.hair_roughness_floor : 0.55;
   const roughSeedAmp = typeof p.hair_roughness_seed_amp === 'number' ? p.hair_roughness_seed_amp : 0.08;
 
   uniqueCacheKey(mat);
@@ -478,6 +499,7 @@ function applyHair(mat, p, t, loadTex) {
     shader.uniforms.uHairSeedAmp   = { value: seedAmp  };
     shader.uniforms.uHairRoughFlr  = { value: roughFloor };
     shader.uniforms.uHairRoughSeed = { value: roughSeedAmp };
+    mat.userData.hairUniforms = shader.uniforms;
 
     // Sample the atlas once at the top of the fragment main and derive the
     // hair-lookup values we'll reuse in both color and alpha replacements.
@@ -554,9 +576,9 @@ function addHairInnerPass(mesh, outerMat, spec) {
   const alphaSwz  = ({ r: 'r', g: 'g', b: 'b', a: 'a' }[alphaChan]) || 'r';
   const rootChan = alphaChan === 'a' ? 'r' : 'g';
   const seedChan = 'b';
-  const rootDark = typeof p.root_darkening === 'number' ? p.root_darkening : 0.35;
-  const seedAmp  = typeof p.seed_variation === 'number' ? p.seed_variation : 0.25;
-  const roughFloor   = typeof p.hair_roughness_floor === 'number' ? p.hair_roughness_floor : 0.0;
+  const rootDark = typeof p.root_darkening === 'number' ? p.root_darkening : 0.0;
+  const seedAmp  = typeof p.seed_variation === 'number' ? p.seed_variation : 0.36;
+  const roughFloor   = typeof p.hair_roughness_floor === 'number' ? p.hair_roughness_floor : 0.55;
   const roughSeedAmp = typeof p.hair_roughness_seed_amp === 'number' ? p.hair_roughness_seed_amp : 0.08;
   const threshold = typeof p.inner_alpha_threshold === 'number'
                     ? p.inner_alpha_threshold : 0.5;
@@ -576,6 +598,7 @@ function addHairInnerPass(mesh, outerMat, spec) {
     shader.uniforms.uHairSeedAmp   = { value: seedAmp  };
     shader.uniforms.uHairRoughFlr  = { value: roughFloor };
     shader.uniforms.uHairRoughSeed = { value: roughSeedAmp };
+    innerMat.userData.hairUniforms = shader.uniforms;
     shader.fragmentShader = `
       uniform float uHairRootDark;
       uniform float uHairSeedAmp;
@@ -632,6 +655,103 @@ function addHairInnerPass(mesh, outerMat, spec) {
   inner.name = mesh.name + '__inner';
   mesh.parent?.add(inner);
   console.log('[viewer][hair] +inner pass for', mesh.name, 'alphaTest=' + threshold);
+  return innerMat;
+}
+
+// ---------------- hair tuning panel
+
+function buildHairTunePanel(container, hairMats) {
+  // Floating control panel for live tweaking. Position on top-right of the
+  // viewer container; collapsed by default behind a small toggle so it doesn't
+  // cover the model.
+  container.style.position = container.style.position || 'relative';
+
+  const root = document.createElement('div');
+  root.style.cssText = [
+    'position:absolute', 'top:8px', 'right:8px', 'z-index:10',
+    'font:12px/1.3 system-ui,-apple-system,sans-serif', 'color:#e8e8e8',
+    'background:rgba(18,20,26,0.88)', 'border:1px solid #2a2f3a',
+    'border-radius:6px', 'user-select:none', 'backdrop-filter:blur(6px)',
+  ].join(';');
+
+  const header = document.createElement('div');
+  header.textContent = 'hair ▾';
+  header.style.cssText = 'padding:6px 10px;cursor:pointer;font-weight:600;letter-spacing:0.04em';
+  root.appendChild(header);
+
+  const body = document.createElement('div');
+  body.style.cssText = 'padding:4px 10px 10px;display:none;min-width:220px';
+  root.appendChild(body);
+
+  header.addEventListener('click', () => {
+    const open = body.style.display === 'none';
+    body.style.display = open ? 'block' : 'none';
+    header.textContent = open ? 'hair ▴' : 'hair ▾';
+  });
+
+  // Seed values from whatever the first hair material currently has, so the
+  // slider positions match the starting look.
+  const first = hairMats[0];
+  const u0 = first?.userData?.hairUniforms || {};
+  const seeds = {
+    roughFloor:  u0.uHairRoughFlr?.value  ?? 0.3,
+    rootDark:    u0.uHairRootDark?.value  ?? 0.35,
+    seedAmp:     u0.uHairSeedAmp?.value   ?? 0.25,
+    roughSeed:   u0.uHairRoughSeed?.value ?? 0.08,
+    anisotropy:  first?.anisotropy ?? 0.8,
+    anisoRot:    first?.anisotropyRotation ?? 0.0,
+  };
+
+  const addSlider = (label, min, max, step, initial, onChange) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:90px 1fr 44px;gap:6px;align-items:center;margin:4px 0';
+    const l = document.createElement('span'); l.textContent = label;
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = String(min); input.max = String(max); input.step = String(step);
+    input.value = String(initial);
+    input.style.cssText = 'width:100%;accent-color:#7ab8ff';
+    const val = document.createElement('span');
+    val.style.cssText = 'text-align:right;font-variant-numeric:tabular-nums;color:#aab';
+    const fmt = (x) => (Math.abs(x) < 10 ? x.toFixed(2) : x.toFixed(1));
+    val.textContent = fmt(Number(initial));
+    input.addEventListener('input', () => {
+      const v = Number(input.value);
+      val.textContent = fmt(v);
+      onChange(v);
+    });
+    row.appendChild(l); row.appendChild(input); row.appendChild(val);
+    body.appendChild(row);
+  };
+
+  // Uniform-driven (shader) controls
+  const setUniform = (name, v) => {
+    for (const m of hairMats) {
+      const u = m.userData?.hairUniforms?.[name];
+      if (u) u.value = v;
+    }
+  };
+  addSlider('rough floor', 0.0, 1.0, 0.01, seeds.roughFloor,
+            (v) => setUniform('uHairRoughFlr', v));
+  addSlider('root dark',   0.0, 1.0, 0.01, seeds.rootDark,
+            (v) => setUniform('uHairRootDark', v));
+  addSlider('seed tint',   0.0, 0.6, 0.01, seeds.seedAmp,
+            (v) => setUniform('uHairSeedAmp', v));
+  addSlider('seed rough',  0.0, 0.3, 0.01, seeds.roughSeed,
+            (v) => setUniform('uHairRoughSeed', v));
+
+  // Material-property controls (anisotropy lives on MeshPhysicalMaterial)
+  const setMatProp = (key, v) => {
+    for (const m of hairMats) {
+      if (key in m) m[key] = v;
+    }
+  };
+  addSlider('anisotropy',  0.0, 1.0, 0.01, seeds.anisotropy,
+            (v) => setMatProp('anisotropy', v));
+  addSlider('aniso rot',   -3.1416, 3.1416, 0.01, seeds.anisoRot,
+            (v) => setMatProp('anisotropyRotation', v));
+
+  container.appendChild(root);
 }
 
 // ---------------- eye refractive

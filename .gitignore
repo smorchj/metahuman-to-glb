@@ -24,3 +24,7 @@ Thumbs.db
 # ada-v3.png + ada-viewer.png are local dev captures — exclude by default
 /ada-v3.png
 /ada-viewer.png
+
+# Claude Code / MCP scratch dirs
+.claude/
+.playwright-mcp/
