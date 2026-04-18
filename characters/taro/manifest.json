@@ -21,15 +21,15 @@
     },
     "03_glb_export": {
       "status": "done",
-      "started_at": "2026-04-18T08:45:30Z",
-      "completed_at": "2026-04-18T08:45:30Z",
+      "started_at": "2026-04-18T14:45:14Z",
+      "completed_at": "2026-04-18T14:45:14Z",
       "output_dir": "03-glb/",
       "errors": []
     },
     "04_webview_build": {
       "status": "done",
-      "started_at": "2026-04-18T08:46:22Z",
-      "completed_at": "2026-04-18T08:46:22Z",
+      "started_at": "2026-04-18T14:45:37Z",
+      "completed_at": "2026-04-18T14:45:37Z",
       "output_dir": "../../docs/characters/",
       "errors": []
     }
