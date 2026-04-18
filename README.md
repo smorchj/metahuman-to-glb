@@ -33,19 +33,18 @@ execute each step.
 ## Known gaps
 
 - **Eye shader is bare-minimum.** Iris / limbus / pupil / sclera-vein math
-  works, but refraction, caustics, and sub-surface on the caruncle are
-  faked or hidden.
+  works ish, but refraction, caustics, and sub-surface on the caruncle are
+  faked or hidden. Iris and pupil size seems slightly off now as well. 
 - **Hair shader is weak.** Currently a built-in alphaHash against the
-  compact-atlas R channel, MI-synthesised base colour, no anisotropy, no
-  root darkening, no tip translucency.
+  compact-atlas R channel, MI-synthesised base colour, right now scalp is showing clearly through,
+  no anisotropy, no root darkening, no tip translucency.
 - **Some MH material maps are skipped** because the Unreal node graphs
   are too complex to round-trip through Blender's Principled BSDF + glTF.
   A generic system for reconstructing UE material graphs automatically
   (instead of per-MI hard-coding) is a prerequisite for full automation.
 - **Brow and lash colour are hardcoded.** The MI synth produces auburn
-  brows (driven by `hairRedness`) that don't match the melanin-derived
-  scalp hair. Lashes are a flat dark. At minimum the brows should be
-  driven by the same melanin curve the scalp uses.
+  brows (driven by `hairRedness`) so I hardcoded it to be dark brown.
+  Brow color should be fixed properly.
 
 ## Contributing
 
