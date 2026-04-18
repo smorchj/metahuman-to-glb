@@ -912,6 +912,13 @@ def main(char=None, workspace=None):
         pkg_dir = str(m.get_path_name()).rsplit(".", 1)[0].rsplit("/", 1)[0]
         if pkg_dir.startswith("/Game/"):
             sweep_paths.add(pkg_dir)
+
+    # Explicit sweep of shared Simplified/Baked face textures. MH's teeth MI
+    # inherits its texture params from parent material M_Teeth, whose textures
+    # live outside the per-character folder — our dep walk misses them because
+    # the MI has no direct reference. The Simplified bake set (T_Teeth_*_Baked,
+    # T_Teeth_mouthOcc) is the LOD-friendly atlas we sample in the web viewer.
+    sweep_paths.add("/Game/MetaHumans/Common/Face/Textures/Simplified")
     sweep_paths = sorted(sweep_paths)
     _log(f"texture sweep paths: {sweep_paths}")
     for tex in _list_textures_under(sweep_paths):

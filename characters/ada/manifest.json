@@ -15,21 +15,21 @@
     "02_blender_setup": {
       "status": "done",
       "started_at": "2026-04-18T12:38:23Z",
-      "completed_at": "2026-04-18T18:46:23Z",
+      "completed_at": "2026-04-18T20:35:11Z",
       "output_dir": "02-blend/",
       "errors": []
     },
     "03_glb_export": {
       "status": "done",
       "started_at": "2026-04-18T14:37:41Z",
-      "completed_at": "2026-04-18T18:47:31Z",
+      "completed_at": "2026-04-18T20:36:14Z",
       "output_dir": "03-glb/",
       "errors": []
     },
     "04_webview_build": {
       "status": "done",
       "started_at": "2026-04-18T14:38:05Z",
-      "completed_at": "2026-04-18T20:04:57Z",
+      "completed_at": "2026-04-18T20:36:18Z",
       "output_dir": "../../docs/characters/",
       "errors": []
     }

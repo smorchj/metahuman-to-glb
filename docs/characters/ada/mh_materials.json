@@ -3,41 +3,6 @@
   "version": 1,
   "materials": [
     {
-      "material_name": "f_med_nrw_shs_flats_cinematic_lambert1",
-      "mesh": "f_med_nrw_shs_flats_Cinematic_LOD0",
-      "slot_index": 0,
-      "material_source": "/Game/MetaHumans/Common/Materials/Flats/M_shs_flats.M_shs_flats",
-      "kind": "cloth",
-      "face_slot": null,
-      "params": {
-        "diffuse_color_1": [
-          0.014918999746441841,
-          0.2748500108718872,
-          0.6145830154418945,
-          1.0
-        ],
-        "diffuse_color_2": [
-          0.7135419845581055,
-          0.7135419845581055,
-          0.7135419845581055,
-          1.0
-        ],
-        "roughness": 0.75,
-        "metallic": 0.0,
-        "ao_amount": 0.85,
-        "detail_tiling": 85.0,
-        "detail_strength": 0.5,
-        "macro_tiling": 3.0,
-        "macro_strength": 0.5,
-        "mask_channel": "r"
-      },
-      "textures": {
-        "normal": "textures/shs_flats_N.png",
-        "mask": "textures/shs_flats_Mask.png",
-        "ao": "textures/shs_flats_AO.png"
-      }
-    },
-    {
       "material_name": "f_med_nrw_btm_slacks_nrm_cinematic_lambert3",
       "mesh": "f_med_nrw_btm_slacks_nrm_Cinematic_LOD0",
       "slot_index": 0,
@@ -161,7 +126,12 @@
         ],
         "roughness": 0.35
       },
-      "textures": {}
+      "textures": {
+        "basecolor": "textures/T_Teeth_BaseColor_Baked.png",
+        "normal": "textures/T_Teeth_Normal_Baked.png",
+        "specular": "textures/T_Teeth_Specular_Baked.png",
+        "mouth_occlusion": "textures/T_Teeth_mouthOcc.png"
+      }
     },
     {
       "material_name": "ada_facemesh_saliva_shader_shader",
@@ -464,6 +434,41 @@
       },
       "textures": {
         "ao": "textures/FaceCavity_MAIN.png"
+      }
+    },
+    {
+      "material_name": "f_med_nrw_shs_flats_cinematic_lambert1",
+      "mesh": "f_med_nrw_shs_flats_Cinematic_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Common/Materials/Flats/M_shs_flats.M_shs_flats",
+      "kind": "cloth",
+      "face_slot": null,
+      "params": {
+        "diffuse_color_1": [
+          0.014918999746441841,
+          0.2748500108718872,
+          0.6145830154418945,
+          1.0
+        ],
+        "diffuse_color_2": [
+          0.7135419845581055,
+          0.7135419845581055,
+          0.7135419845581055,
+          1.0
+        ],
+        "roughness": 0.75,
+        "metallic": 0.0,
+        "ao_amount": 0.85,
+        "detail_tiling": 85.0,
+        "detail_strength": 0.5,
+        "macro_tiling": 3.0,
+        "macro_strength": 0.5,
+        "mask_channel": "r"
+      },
+      "textures": {
+        "normal": "textures/shs_flats_N.png",
+        "mask": "textures/shs_flats_Mask.png",
+        "ao": "textures/shs_flats_AO.png"
       }
     },
     {

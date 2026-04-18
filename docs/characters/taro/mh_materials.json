@@ -3,98 +3,6 @@
   "version": 1,
   "materials": [
     {
-      "material_name": "m_med_nrw_shs_runningshoes_cinematic_M_shoes",
-      "mesh": "m_med_nrw_shs_runningshoes_Cinematic_LOD0",
-      "slot_index": 0,
-      "material_source": "/Game/MetaHumans/Common/Materials/RunningShoes/M_shs_runningshoes.M_shs_runningshoes",
-      "kind": "cloth",
-      "face_slot": null,
-      "params": {
-        "diffuse_color_1": [
-          0.018079999834299088,
-          0.3330810070037842,
-          0.7447919845581055,
-          1.0
-        ],
-        "diffuse_color_2": [
-          0.640625,
-          0.640625,
-          0.640625,
-          0.0
-        ],
-        "roughness": 0.20000000298023224,
-        "metallic": 0.0,
-        "ao_amount": 1.0,
-        "detail_tiling": 1.0,
-        "detail_strength": 0.30000001192092896,
-        "macro_tiling": 1.0,
-        "macro_strength": 0.20000000298023224,
-        "mask_channel": "r"
-      },
-      "textures": {
-        "ao": "textures/shs_runningshoes_AO.png",
-        "mask": "textures/shs_runningshoes_Mask.png",
-        "normal": "textures/shs_runningshoes_N.png",
-        "macro_overlay": "textures/macro_heather_04.png",
-        "detail_normal": "macro_heather_04_normal"
-      }
-    },
-    {
-      "material_name": "m_med_nrw_top_hoodie_nrm_cinematic_lambert1",
-      "mesh": "m_med_nrw_top_hoodie_nrm_Cinematic_LOD0",
-      "slot_index": 0,
-      "material_source": "/Game/MetaHumans/Common/Materials/Hoodie/M_top_hoodie.M_top_hoodie",
-      "kind": "cloth",
-      "face_slot": null,
-      "params": {
-        "diffuse_color_1": [
-          0.038203999400138855,
-          0.038203999400138855,
-          0.038203999400138855,
-          1.0
-        ],
-        "diffuse_color_2": [
-          0.038203999400138855,
-          0.25818300247192383,
-          1.0,
-          1.0
-        ],
-        "roughness": 0.75,
-        "metallic": 0.0,
-        "ao_amount": 0.85,
-        "detail_tiling": 75.0,
-        "detail_strength": 0.20000000298023224,
-        "macro_tiling": 6.0,
-        "macro_strength": 0.10000000149011612,
-        "mask_channel": "r"
-      },
-      "textures": {
-        "macro_overlay": "textures/macro_heather_04.png",
-        "ao": "textures/top_hoodie_AO.png",
-        "mask": "textures/top_hoodie_Mask.png",
-        "normal": "textures/top_hoodie_N.png",
-        "detail_diffuse": "textures/micro_doubleKnit_front_AOHCA_M.png",
-        "detail_normal": "micro_knit_front_N"
-      }
-    },
-    {
-      "material_name": "m_med_nrw_body_MI_BodySynthesized",
-      "mesh": "m_med_nrw_body_LOD0",
-      "slot_index": 0,
-      "material_source": "/Game/MetaHumans/Taro/Materials/MI_BodySynthesized.MI_BodySynthesized",
-      "kind": "skin",
-      "face_slot": null,
-      "params": {
-        "roughness_bias": 0.0
-      },
-      "textures": {
-        "ao": "textures/male_body_cavity_map.png",
-        "normal": "textures/male_body_normal_map.png",
-        "roughness": "textures/male_body_roughness_map.png",
-        "basecolor": "textures/BodyBaseColor.png"
-      }
-    },
-    {
       "material_name": "m_med_nrw_btm_jeans_nrm_cinematic_lambert3",
       "mesh": "m_med_nrw_btm_jeans_nrm_Cinematic_LOD0",
       "slot_index": 0,
@@ -164,7 +72,12 @@
         ],
         "roughness": 0.35
       },
-      "textures": {}
+      "textures": {
+        "basecolor": "textures/T_Teeth_BaseColor_Baked.png",
+        "normal": "textures/T_Teeth_Normal_Baked.png",
+        "specular": "textures/T_Teeth_Specular_Baked.png",
+        "mouth_occlusion": "textures/T_Teeth_mouthOcc.png"
+      }
     },
     {
       "material_name": "taro_facemesh_saliva_shader_shader",
@@ -476,6 +389,98 @@
       },
       "textures": {
         "ao": "textures/FaceCavity_MAIN.png"
+      }
+    },
+    {
+      "material_name": "m_med_nrw_body_MI_BodySynthesized",
+      "mesh": "m_med_nrw_body_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Taro/Materials/MI_BodySynthesized.MI_BodySynthesized",
+      "kind": "skin",
+      "face_slot": null,
+      "params": {
+        "roughness_bias": 0.0
+      },
+      "textures": {
+        "ao": "textures/male_body_cavity_map.png",
+        "normal": "textures/male_body_normal_map.png",
+        "roughness": "textures/male_body_roughness_map.png",
+        "basecolor": "textures/BodyBaseColor.png"
+      }
+    },
+    {
+      "material_name": "m_med_nrw_shs_runningshoes_cinematic_M_shoes",
+      "mesh": "m_med_nrw_shs_runningshoes_Cinematic_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Common/Materials/RunningShoes/M_shs_runningshoes.M_shs_runningshoes",
+      "kind": "cloth",
+      "face_slot": null,
+      "params": {
+        "diffuse_color_1": [
+          0.018079999834299088,
+          0.3330810070037842,
+          0.7447919845581055,
+          1.0
+        ],
+        "diffuse_color_2": [
+          0.640625,
+          0.640625,
+          0.640625,
+          0.0
+        ],
+        "roughness": 0.20000000298023224,
+        "metallic": 0.0,
+        "ao_amount": 1.0,
+        "detail_tiling": 1.0,
+        "detail_strength": 0.30000001192092896,
+        "macro_tiling": 1.0,
+        "macro_strength": 0.20000000298023224,
+        "mask_channel": "r"
+      },
+      "textures": {
+        "ao": "textures/shs_runningshoes_AO.png",
+        "mask": "textures/shs_runningshoes_Mask.png",
+        "normal": "textures/shs_runningshoes_N.png",
+        "macro_overlay": "textures/macro_heather_04.png",
+        "detail_normal": "macro_heather_04_normal"
+      }
+    },
+    {
+      "material_name": "m_med_nrw_top_hoodie_nrm_cinematic_lambert1",
+      "mesh": "m_med_nrw_top_hoodie_nrm_Cinematic_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Common/Materials/Hoodie/M_top_hoodie.M_top_hoodie",
+      "kind": "cloth",
+      "face_slot": null,
+      "params": {
+        "diffuse_color_1": [
+          0.038203999400138855,
+          0.038203999400138855,
+          0.038203999400138855,
+          1.0
+        ],
+        "diffuse_color_2": [
+          0.038203999400138855,
+          0.25818300247192383,
+          1.0,
+          1.0
+        ],
+        "roughness": 0.75,
+        "metallic": 0.0,
+        "ao_amount": 0.85,
+        "detail_tiling": 75.0,
+        "detail_strength": 0.20000000298023224,
+        "macro_tiling": 6.0,
+        "macro_strength": 0.10000000149011612,
+        "mask_channel": "r"
+      },
+      "textures": {
+        "macro_overlay": "textures/macro_heather_04.png",
+        "ao": "textures/top_hoodie_AO.png",
+        "mask": "textures/top_hoodie_Mask.png",
+        "normal": "textures/top_hoodie_N.png",
+        "detail_diffuse": "textures/micro_doubleKnit_front_AOHCA_M.png",
+        "detail_normal": "micro_knit_front_N"
       }
     },
     {

@@ -384,7 +384,13 @@ def _build_face_accessory_material(name, slot_kind, textures_root, assignments,
         except Exception: pass
 
     if slot_kind == "teeth":
-        # Baked ivory off-white with subtle SSS, moderate gloss.
+        # MH's M_Teeth parent material is a procedural shader we can't
+        # reconstruct cleanly, but the project ships a LOD-friendly simplified
+        # bake under /Game/MetaHumans/Common/Face/Textures/Simplified/ that
+        # packs teeth + gums + tongue into one atlas matching the teeth mesh
+        # UVs. Stage 01's sweep exports them as .tga; we load them here as
+        # image datablocks so stage 03's sidecar pass finds them, and record
+        # them on the material spec so the web viewer can PBR-sample them.
         _set("Base Color", (0.85, 0.80, 0.72, 1.0))
         _set("Roughness", 0.35)
         _set("Subsurface Weight", 0.10)
@@ -392,6 +398,18 @@ def _build_face_accessory_material(name, slot_kind, textures_root, assignments,
         _set("Subsurface Scale", 0.005)
         for k in ("Specular IOR Level", "Specular"):
             if k in bsdf.inputs: bsdf.inputs[k].default_value = 0.5; break
+        # Preload the simplified bake textures into bpy.data.images. We don't
+        # wire them into the Blender shader (the viewer does the sampling
+        # directly), we just need them present so stage 03 sidecars them.
+        # use_fake_user=True keeps them alive across .blend save/load even
+        # though no node references them.
+        for rel in ("T_Teeth_BaseColor_Baked.tga",
+                    "T_Teeth_Normal_Baked.tga",
+                    "T_Teeth_Specular_Baked.tga",
+                    "T_Teeth_mouthOcc.tga"):
+            img = _load(rel, noncolor=(rel != "T_Teeth_BaseColor_Baked.tga"))
+            if img is not None:
+                img.use_fake_user = True
         return mat
 
     if slot_kind == "eye_refractive":
@@ -1169,6 +1187,18 @@ def _wire_materials(mh, in_root):
                 target.data.materials[i] = new_mat
             else:
                 target.data.materials.append(new_mat)
+            rec_textures = dict(assignments)
+            # Teeth: MH ships no textures on the MI itself, but we preload the
+            # LOD-friendly Simplified bake set in _build_face_accessory_material.
+            # Surface those on the material spec so stage 03 sidecars them and
+            # the viewer can PBR-sample them (teeth + gums + tongue atlas).
+            if face_slot == "teeth":
+                rec_textures = {
+                    "basecolor":       "T_Teeth_BaseColor_Baked.tga",
+                    "normal":          "T_Teeth_Normal_Baked.tga",
+                    "specular":        "T_Teeth_Specular_Baked.tga",
+                    "mouth_occlusion": "T_Teeth_mouthOcc.tga",
+                }
             rec = {
                 "mesh": target.name,
                 "slot_index": i,
@@ -1179,7 +1209,7 @@ def _wire_materials(mh, in_root):
                 "kind": kind,
                 "face_slot": face_slot,
                 "mi_params": mat_rec.get("params") or {},
-                "textures": assignments,
+                "textures": rec_textures,
             }
             # For eye_refractive: capture the pole UV so the web viewer can run
             # the same radial iris/sclera/pupil math the Blender shader does.

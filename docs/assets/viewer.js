@@ -1016,13 +1016,20 @@ function applyFaceAccessory(mat, spec, p, t, loadTex) {
     return;
   }
 
+  // Teeth: sample MH's LOD-friendly Simplified bake set — one atlas packs
+  // teeth + gums + tongue, a shared normal, a specular/gloss map, and a
+  // mouth-occlusion mask for the inside-mouth darkening. The teeth slot's
+  // mesh covers both the teeth proper and the tongue geometry in MH's
+  // layout, so the whole inner-mouth gets textured from this one material.
+  if (slot === 'teeth') {
+    applyTeeth(mat, p, t, loadTex);
+    return;
+  }
+
   if (p.base_color) mat.color.setRGB(p.base_color[0], p.base_color[1], p.base_color[2]);
   if (typeof p.roughness === 'number') mat.roughness = p.roughness;
   if (p.alpha_clip) { mat.alphaTest = 0.5; mat.side = THREE.DoubleSide; }
 
-  if (slot === 'teeth') {
-    mat.roughness = 0.35;
-  }
   if (slot === 'eye_occlusion') {
     // Dark ring under the lid that sells socket depth.
     mat.color.setRGB(0.02, 0.015, 0.01);
@@ -1034,6 +1041,95 @@ function applyFaceAccessory(mat, spec, p, t, loadTex) {
   if (slot === 'cartilage') {
     mat.roughness = 0.6;
   }
+}
+
+// ---------------- teeth + inner-mouth
+//
+// Samples MH's Simplified teeth bake set:
+//   T_Teeth_BaseColor_Baked — full color atlas (teeth + gums + tongue)
+//   T_Teeth_Normal_Baked    — tangent-space normal
+//   T_Teeth_Specular_Baked  — specular (greyscale, used to derive roughness)
+//   T_Teeth_mouthOcc        — mouth-interior darkening mask
+//
+// The teeth mesh slot in MH covers both the teeth proper AND the tongue in
+// one mesh/UV atlas, so texturing this material fixes both at once.
+
+function applyTeeth(mat, p, t, loadTex) {
+  const base = t.basecolor       ? loadTex(t.basecolor,       { srgb: true })  : null;
+  const norm = t.normal          ? loadTex(t.normal,          { srgb: false }) : null;
+  const spec = t.specular        ? loadTex(t.specular,        { srgb: false }) : null;
+  const occ  = t.mouth_occlusion ? loadTex(t.mouth_occlusion, { srgb: false }) : null;
+
+  if (!base) {
+    // Fallback to the old flat ivory if the bake textures didn't make it in.
+    mat.color.setRGB(0.85, 0.80, 0.72);
+    mat.roughness = 0.35;
+    console.warn('[viewer][teeth]', mat.name, 'no basecolor — using flat ivory');
+    return;
+  }
+
+  mat.map = base;
+  mat.map.colorSpace = THREE.SRGBColorSpace;
+  if (norm) {
+    mat.normalMap = norm;
+    mat.normalScale = new THREE.Vector2(0.6, 0.6);
+  }
+  mat.color.setRGB(1, 1, 1);         // let the basecolor texture drive color entirely
+  mat.roughness = 1.0;                // multiplied by the derived map below
+  mat.metalness = 0.0;
+
+  uniqueCacheKey(mat);
+  const prevOBC = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader) => {
+    if (prevOBC) prevOBC(shader);
+    shader.uniforms.uTeethSpec  = { value: spec || null };
+    shader.uniforms.uTeethSpecOn= { value: spec ? 1.0 : 0.0 };
+    shader.uniforms.uTeethOcc   = { value: occ  || null };
+    shader.uniforms.uTeethOccOn = { value: occ  ? 1.0 : 0.0 };
+
+    shader.fragmentShader = `
+      uniform sampler2D uTeethSpec;
+      uniform float uTeethSpecOn;
+      uniform sampler2D uTeethOcc;
+      uniform float uTeethOccOn;
+    ` + shader.fragmentShader;
+
+    // Multiply basecolor by mouth-occlusion so the inside of the mouth and
+    // the back of the tongue/throat darken naturally. Subtle — the map is
+    // authored dark in shadow regions, near white everywhere else.
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <map_fragment>',
+      `
+      #include <map_fragment>
+      if (uTeethOccOn > 0.5) {
+        float occ = texture2D(uTeethOcc, vMapUv).r;
+        // Ease the darkening: 1.0 at mask=1 (no occ), ~0.35 at mask=0 (deep shadow)
+        float occFac = mix(0.35, 1.0, occ);
+        diffuseColor.rgb *= occFac;
+      }
+      `
+    );
+
+    // Derive roughness from specular map (higher spec = lower roughness).
+    // The Simplified spec map is greyscale; 0 = matte gums/tongue, 1 = glossy
+    // enamel tips. Invert into a plausible roughness range.
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <roughnessmap_fragment>',
+      `
+      float roughnessFactor = roughness;
+      if (uTeethSpecOn > 0.5) {
+        float s = texture2D(uTeethSpec, vMapUv).r;
+        // spec 0 → rough 0.80 (gums/tongue, matte wet tissue)
+        // spec 1 → rough 0.20 (tooth enamel, glossy)
+        roughnessFactor = mix(0.80, 0.20, clamp(s, 0.0, 1.0));
+      } else {
+        roughnessFactor = 0.45;
+      }
+      `
+    );
+  };
+  console.log('[viewer][teeth]', mat.name,
+              `→ base=${!!base}, normal=${!!norm}, spec=${!!spec}, mouthOcc=${!!occ}`);
 }
 
 // ---------------- helpers
