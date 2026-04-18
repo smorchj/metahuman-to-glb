@@ -73,6 +73,13 @@ export async function mount(container, opts) {
 
   scene.add(gltf.scene);
 
+  // Per-character bone pose fixups — MH garments with simulated elements
+  // (drawstring laces, loose straps) ship in their authored rest pose, which
+  // for Chaos-Cloth-driven bones is usually horizontal. We pose these bones
+  // to a hand-tuned settled rotation at load so they hang naturally without
+  // needing to re-bake the GLB.
+  applyBoneFixups(gltf.scene);
+
   if (mapping) {
     try {
       patchMaterials(gltf.scene, mapping, new URL(mappingUrl, window.location.href));
@@ -99,6 +106,35 @@ export async function mount(container, opts) {
   });
 
   return { renderer, scene, camera, controls, gltf };
+}
+
+// ---------------------------------------------------------------- bone fixups
+
+// Quaternions are stored three.js-order [x, y, z, w]. Blender pose-mode
+// quaternions are (w, x, y, z) — convert when adding new entries.
+//
+// Tuned by hand in Blender pose mode then transcribed here; see issue #9 for
+// the MH Chaos-Cloth-at-rest background. Only the root joint of each lace
+// chain needs rotation — child joints inherit via the skeleton.
+const BONE_FIXUPS = {
+  // Taro hoodie drawstring — rotates both strings forward-down so they drape
+  // against the chest instead of sticking out horizontally.
+  'dyn_string_l_joint01': [0, 0.4828, 0, 0.8757],
+  'dyn_string_r_joint01': [0, 0.4742, 0, 0.8804],
+};
+
+function applyBoneFixups(root) {
+  let applied = 0;
+  root.traverse((o) => {
+    if (!o.isBone) return;
+    const q = BONE_FIXUPS[o.name];
+    if (!q) return;
+    o.quaternion.set(q[0], q[1], q[2], q[3]);
+    applied += 1;
+  });
+  if (applied > 0) {
+    console.log('[viewer] applied', applied, 'bone fixup(s)');
+  }
 }
 
 // --------------------------------------------------------------------- framing
