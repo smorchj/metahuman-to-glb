@@ -73,6 +73,13 @@ export async function mount(container, opts) {
 
   scene.add(gltf.scene);
 
+  // Per-character bone pose fixups — MH garments with simulated elements
+  // (drawstring laces, loose straps) ship in their authored rest pose, which
+  // for Chaos-Cloth-driven bones is usually horizontal. We pose these bones
+  // to a hand-tuned settled rotation at load so they hang naturally without
+  // needing to re-bake the GLB.
+  applyBoneFixups(gltf.scene);
+
   if (mapping) {
     try {
       patchMaterials(gltf.scene, mapping, new URL(mappingUrl, window.location.href));
@@ -99,6 +106,35 @@ export async function mount(container, opts) {
   });
 
   return { renderer, scene, camera, controls, gltf };
+}
+
+// ---------------------------------------------------------------- bone fixups
+
+// Quaternions are stored three.js-order [x, y, z, w]. Blender pose-mode
+// quaternions are (w, x, y, z) — convert when adding new entries.
+//
+// Tuned by hand in Blender pose mode then transcribed here; see issue #9 for
+// the MH Chaos-Cloth-at-rest background. Only the root joint of each lace
+// chain needs rotation — child joints inherit via the skeleton.
+const BONE_FIXUPS = {
+  // Taro hoodie drawstring — rotates both strings forward-down so they drape
+  // against the chest instead of sticking out horizontally.
+  'dyn_string_l_joint01': [0, 0.4828, 0, 0.8757],
+  'dyn_string_r_joint01': [0, 0.4742, 0, 0.8804],
+};
+
+function applyBoneFixups(root) {
+  let applied = 0;
+  root.traverse((o) => {
+    if (!o.isBone) return;
+    const q = BONE_FIXUPS[o.name];
+    if (!q) return;
+    o.quaternion.set(q[0], q[1], q[2], q[3]);
+    applied += 1;
+  });
+  if (applied > 0) {
+    console.log('[viewer] applied', applied, 'bone fixup(s)');
+  }
 }
 
 // --------------------------------------------------------------------- framing
@@ -204,28 +240,33 @@ function patchMaterials(root, mapping, baseUrl) {
       counts.matched += 1;
       const key = spec.face_slot ? `${spec.kind}:${spec.face_slot}` : spec.kind;
       counts.byKind[key] = (counts.byKind[key] || 0) + 1;
-      const patched = applySpec(mat, spec, loadTex);
-      if (patched && patched !== mat) {
+
+      // Upgrade hair + skin to MeshPhysicalMaterial BEFORE applySpec, so
+      // applyHair can set .anisotropy / .anisotropyMap and applySkin can use
+      // .specularIntensity. (glTF materials usually import as Standard, which
+      // doesn't expose those properties.)
+      let workMat = mat;
+      if (spec.kind === 'hair' || spec.kind === 'skin') {
+        if (!workMat.isMeshPhysicalMaterial && workMat.isMeshStandardMaterial) {
+          const phys = new THREE.MeshPhysicalMaterial();
+          phys.copy(workMat);
+          phys.name = workMat.name;
+          workMat = phys;
+          if (Array.isArray(obj.material)) obj.material[i] = phys;
+          else obj.material = phys;
+        }
+      }
+
+      const patched = applySpec(workMat, spec, loadTex);
+      if (patched && patched !== workMat) {
         if (Array.isArray(obj.material)) obj.material[i] = patched;
         else obj.material = patched;
       }
       if (spec.kind === 'hair') {
-        hairTwoPass.push({ mesh: obj, slot: i, outerMat: patched || mat, spec });
+        hairTwoPass.push({ mesh: obj, slot: i, outerMat: patched || workMat, spec });
       }
       if (spec.kind === 'skin') {
-        // Ensure MeshPhysicalMaterial so specularIntensity / IOR are real
-        // properties, then bake the tuned skin settings. No live sliders —
-        // values came from eyeballing in the panel, now fixed in code.
-        let skinMat = patched || mat;
-        if (!skinMat.isMeshPhysicalMaterial && skinMat.isMeshStandardMaterial) {
-          const phys = new THREE.MeshPhysicalMaterial();
-          phys.copy(skinMat);
-          phys.name = skinMat.name;
-          skinMat = phys;
-          if (Array.isArray(obj.material)) obj.material[i] = phys;
-          else obj.material = phys;
-        }
-        applySkin(skinMat);
+        applySkin(patched || workMat);
       }
     });
   });
@@ -397,23 +438,109 @@ function applyHair(mat, p, t, loadTex) {
   mat.depthWrite = false;
   mat.side = THREE.DoubleSide;
 
-  const chan = (p.alpha_channel || 'r').toLowerCase();
-  const swizzle = ({ r: 'r', g: 'g', b: 'b', a: 'a' }[chan]) || 'r';
+  // Anisotropic specular along strand tangent — this is the "proper" MH hair
+  // spec treatment. _CardsAtlas_Tangent packs the tangent direction in RG
+  // (0.5/0.5-centered, matches KHR_materials_anisotropy), which aligns the
+  // GGX highlight along each card's strand direction instead of a round
+  // isotropic hotspot. Requires MeshPhysicalMaterial (upgraded in patchMats).
+  const tangentUrl = p.tangent_stem ? `textures/${p.tangent_stem}.png` : null;
+  const tangent = tangentUrl ? loadTex(tangentUrl, { srgb: false }) : null;
+  if (tangent && 'anisotropy' in mat) {
+    mat.anisotropyMap = tangent;
+    mat.anisotropy = typeof p.anisotropy === 'number' ? p.anisotropy : 0.8;
+    mat.anisotropyRotation = typeof p.anisotropy_rotation === 'number'
+                             ? p.anisotropy_rotation : 0.0;
+  }
+
+  const alphaChan = (p.alpha_channel || 'r').toLowerCase();
+  const alphaSwz  = ({ r: 'r', g: 'g', b: 'b', a: 'a' }[alphaChan]) || 'r';
+
+  // MH hair atlases pack three data channels beyond coverage:
+  //   _CardsAtlas_Attribute (compact, 5.6): R=coverage, G=root→tip, B=seed
+  //   _RootUVSeedCoverage   (legacy):       R=root→tip, G=uv.v,  B=seed, A=coverage
+  // Derive root + seed channels from which channel is alpha.
+  // alpha=R  → atlas is compact          → root=G, seed=B
+  // alpha=A  → atlas is legacy           → root=R, seed=B
+  const rootChan = alphaChan === 'a' ? 'r' : 'g';
+  const seedChan = 'b';
+  const rootDark = typeof p.root_darkening === 'number' ? p.root_darkening : 0.35;
+  const seedAmp  = typeof p.seed_variation === 'number' ? p.seed_variation : 0.25;
+  // Specular control — MH hair MIs ship roughness as low as 0.37 which yields
+  // sharp isotropic pinpoints in three.js (the UE shader compensates via
+  // anisotropic tangent sampling that we don't have). Floor it high and let
+  // the seed channel modulate per-strand so highlights break up naturally.
+  const roughFloor = typeof p.hair_roughness_floor === 'number' ? p.hair_roughness_floor : 0.0;
+  const roughSeedAmp = typeof p.hair_roughness_seed_amp === 'number' ? p.hair_roughness_seed_amp : 0.08;
 
   uniqueCacheKey(mat);
   mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uHairRootDark  = { value: rootDark };
+    shader.uniforms.uHairSeedAmp   = { value: seedAmp  };
+    shader.uniforms.uHairRoughFlr  = { value: roughFloor };
+    shader.uniforms.uHairRoughSeed = { value: roughSeedAmp };
+
+    // Sample the atlas once at the top of the fragment main and derive the
+    // hair-lookup values we'll reuse in both color and alpha replacements.
+    shader.fragmentShader = `
+      uniform float uHairRootDark;
+      uniform float uHairSeedAmp;
+      uniform float uHairRoughFlr;
+      uniform float uHairRoughSeed;
+    ` + shader.fragmentShader;
+
+    // Modulate diffuseColor with root→tip darkening + per-strand tint
+    // variance. Runs after the normal map_fragment (which already applied
+    // the flat base color).
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <map_fragment>',
+      `
+      #include <map_fragment>
+      #ifdef USE_ALPHAMAP
+        vec4 hairAtlas = texture2D( alphaMap, vAlphaMapUv );
+        float rootT = hairAtlas.${rootChan};        // 0 at root, 1 at tip
+        float seed  = hairAtlas.${seedChan};        // per-strand random
+        float toneMul   = mix( uHairRootDark, 1.0, rootT );
+        float strandMul = 1.0 + (seed - 0.5) * 2.0 * uHairSeedAmp;
+        diffuseColor.rgb *= toneMul * strandMul;
+      #endif
+      `
+    );
+
+    // Roughness floor + per-strand seed modulation. Tips end up slightly
+    // rougher than roots (broken cuticle), and each strand card has its own
+    // random offset so the whole head isn't a uniform mirror.
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <roughnessmap_fragment>',
+      `
+      float roughnessFactor = roughness;
+      #ifdef USE_ROUGHNESSMAP
+        vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );
+        roughnessFactor *= texelRoughness.g;
+      #endif
+      #ifdef USE_ALPHAMAP
+        float hairRootT = texture2D( alphaMap, vAlphaMapUv ).${rootChan};
+        float hairSeed  = texture2D( alphaMap, vAlphaMapUv ).${seedChan};
+        float roughSeedMod = (hairSeed - 0.5) * 2.0 * uHairRoughSeed;
+        float roughTipMod  = (1.0 - hairRootT) * 0.06;
+        roughnessFactor = max( roughnessFactor + roughSeedMod + roughTipMod, uHairRoughFlr );
+      #endif
+      roughnessFactor = clamp( roughnessFactor, 0.0, 1.0 );
+      `
+    );
+
     // Replace the default alphaMap sampler (which uses .g) with the declared
     // channel so MH compact-atlas R gets picked up, not the dense G gradient.
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <alphamap_fragment>',
       `
       #ifdef USE_ALPHAMAP
-        diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).${swizzle};
+        diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).${alphaSwz};
       #endif
       `
     );
   };
-  console.log('[viewer][hair]', mat.name, '→ outer alpha-blend R-channel, atlas=' + atlasUrl);
+  console.log('[viewer][hair]', mat.name,
+              `→ alpha=${alphaChan}, root=${rootChan}, seed=${seedChan}, roughFloor=${roughFloor}, atlas=${atlasUrl}, tangent=${tangentUrl || 'none'}`);
 }
 
 // Build the inner opaque-alpha-clip sibling for a hair mesh.
@@ -423,8 +550,14 @@ function addHairInnerPass(mesh, outerMat, spec) {
   if (!outerMat?.alphaMap) return;         // nothing to clip against
   if (Array.isArray(mesh.material)) return; // multi-slot hair meshes: skip for now
   const p = spec.params || {};
-  const chan = (p.alpha_channel || 'r').toLowerCase();
-  const swizzle = ({ r: 'r', g: 'g', b: 'b', a: 'a' }[chan]) || 'r';
+  const alphaChan = (p.alpha_channel || 'r').toLowerCase();
+  const alphaSwz  = ({ r: 'r', g: 'g', b: 'b', a: 'a' }[alphaChan]) || 'r';
+  const rootChan = alphaChan === 'a' ? 'r' : 'g';
+  const seedChan = 'b';
+  const rootDark = typeof p.root_darkening === 'number' ? p.root_darkening : 0.35;
+  const seedAmp  = typeof p.seed_variation === 'number' ? p.seed_variation : 0.25;
+  const roughFloor   = typeof p.hair_roughness_floor === 'number' ? p.hair_roughness_floor : 0.0;
+  const roughSeedAmp = typeof p.hair_roughness_seed_amp === 'number' ? p.hair_roughness_seed_amp : 0.08;
   const threshold = typeof p.inner_alpha_threshold === 'number'
                     ? p.inner_alpha_threshold : 0.5;
 
@@ -439,11 +572,53 @@ function addHairInnerPass(mesh, outerMat, spec) {
 
   uniqueCacheKey(innerMat);
   innerMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uHairRootDark  = { value: rootDark };
+    shader.uniforms.uHairSeedAmp   = { value: seedAmp  };
+    shader.uniforms.uHairRoughFlr  = { value: roughFloor };
+    shader.uniforms.uHairRoughSeed = { value: roughSeedAmp };
+    shader.fragmentShader = `
+      uniform float uHairRootDark;
+      uniform float uHairSeedAmp;
+      uniform float uHairRoughFlr;
+      uniform float uHairRoughSeed;
+    ` + shader.fragmentShader;
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <map_fragment>',
+      `
+      #include <map_fragment>
+      #ifdef USE_ALPHAMAP
+        vec4 hairAtlas = texture2D( alphaMap, vAlphaMapUv );
+        float rootT = hairAtlas.${rootChan};
+        float seed  = hairAtlas.${seedChan};
+        float toneMul   = mix( uHairRootDark, 1.0, rootT );
+        float strandMul = 1.0 + (seed - 0.5) * 2.0 * uHairSeedAmp;
+        diffuseColor.rgb *= toneMul * strandMul;
+      #endif
+      `
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <roughnessmap_fragment>',
+      `
+      float roughnessFactor = roughness;
+      #ifdef USE_ROUGHNESSMAP
+        vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );
+        roughnessFactor *= texelRoughness.g;
+      #endif
+      #ifdef USE_ALPHAMAP
+        float hairRootT = texture2D( alphaMap, vAlphaMapUv ).${rootChan};
+        float hairSeed  = texture2D( alphaMap, vAlphaMapUv ).${seedChan};
+        float roughSeedMod = (hairSeed - 0.5) * 2.0 * uHairRoughSeed;
+        float roughTipMod  = (1.0 - hairRootT) * 0.06;
+        roughnessFactor = max( roughnessFactor + roughSeedMod + roughTipMod, uHairRoughFlr );
+      #endif
+      roughnessFactor = clamp( roughnessFactor, 0.0, 1.0 );
+      `
+    );
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <alphamap_fragment>',
       `
       #ifdef USE_ALPHAMAP
-        diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).${swizzle};
+        diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).${alphaSwz};
       #endif
       `
     );
@@ -640,12 +815,16 @@ function applyEyelashes(mat, p, t, loadTex) {
   }
 
   // Eyelash coverage PNGs are grayscale (R=G=B=A). Default alphaMap .g works.
+  // Regular alpha blend (not alphaHash) for smooth edges — tested against MH
+  // compact lashes where the dithered hash look was very visible. depthWrite
+  // off so lashes blend over eyes cleanly; no sorting issues in practice
+  // because lashes are the closest surface to the camera around the eye.
   mat.alphaMap = alpha;
-  mat.alphaHash = true;
-  mat.transparent = false;
+  mat.alphaHash = false;
+  mat.transparent = true;
   mat.alphaTest = 0.0;
-  mat.depthWrite = true;
-  console.log('[viewer][lash]', mat.name, '→ alphaHash .g, coverage=' + t.alpha);
+  mat.depthWrite = false;
+  console.log('[viewer][lash]', mat.name, '→ alpha-blend .g, coverage=' + t.alpha);
 }
 
 // ---------------- face accessory (teeth / saliva / eyeshell / eyeEdge / cartilage)

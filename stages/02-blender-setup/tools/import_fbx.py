@@ -79,10 +79,14 @@ def _classify_texture(filename):
              "t_flatnormal.tga", "t_skinmicronormal.tga"):
         return None
     # MH hair-card data-packed atlases — NOT albedo.
-    # _ColorXYDepthGroupID: RG=tangent, B=depth, A=group id. Skip.
-    # _CardsAtlas_Tangent / _TangentStrandU: tangent data. Skip.
-    if ("colorxydepthgroupid" in n or "cardsatlas_tangent" in n
-            or "tangentstrandu" in n):
+    # _CardsAtlas_Tangent: RG=tangent XY in card UV space, used for
+    # anisotropic hair specular. Route as 'tangent_atlas' so the web
+    # viewer can sample it via KHR_materials_anisotropy.
+    if "cardsatlas_tangent" in n:
+        return "tangent_atlas"
+    # _ColorXYDepthGroupID / _TangentStrandU — alternative tangent packings
+    # we don't currently consume; skip for now.
+    if "colorxydepthgroupid" in n or "tangentstrandu" in n:
         return None
     # MH 5.6 "compact" hair atlas — _CardsAtlas_Attribute packs coverage in the
     # R channel (vs the legacy _RootUVSeedCoverage which uses A). Eyebrows and
@@ -1016,6 +1020,28 @@ def _build_pbr_material(name, textures_root, assignments, base_color_rgba=None,
                 nt.links.new(ramp.outputs["Color"], mul.inputs["Color2"])
                 bc_output = mul.outputs["Color"]
 
+    # MH anisotropic hair tangent (_CardsAtlas_Tangent) — not used by the Blender
+    # shader (Principled BSDF anisotropy direction comes from tangent geometry,
+    # not a texture), but must be loaded as a datablock so stage 03's sidecar
+    # emitter picks it up and copies the PNG into textures/ for the web viewer
+    # (which wires it into MeshPhysicalMaterial.anisotropyMap).
+    if material_kind == "hair" and assignments.get("tangent_atlas"):
+        tang_img = _load_img(assignments["tangent_atlas"])
+        if tang_img:
+            try: tang_img.colorspace_settings.name = "Non-Color"
+            except Exception: pass
+            # Orphan user on the image datablock so it survives save — the
+            # image isn't wired into any shader input, so without this Blender
+            # purges it on the next save and stage 03 can't sidecar it.
+            tang_img.use_fake_user = True
+            # Belt-and-braces: attach to a disconnected TexImage node in the
+            # material tree so it's part of the blend regardless.
+            tn = nt.nodes.new("ShaderNodeTexImage")
+            tn.image = tang_img
+            tn.location = (-1400, -300)
+            tn.label = "CardsAtlas_Tangent (for web)"
+            tn.mute = True
+
     # Commit base-color wiring (after any hair root-darkening splice).
     if bc_output is not None:
         nt.links.new(bc_output, bsdf.inputs["Base Color"])
@@ -1318,6 +1344,7 @@ def _build_material_mapping(applied):
             tex_stems = spec["textures"]
             alpha_channel = "r" if "alpha_r" in tex_stems else ("a" if "alpha" in tex_stems else None)
             alpha_stem = tex_stems.get("alpha_r") or tex_stems.get("alpha")
+            tangent_stem = tex_stems.get("tangent_atlas")
             synth_color = _pick_mi_basecolor(params) or [0.3, 0.22, 0.15, 1.0]
             # Eyebrow MIs in MH ship with hairRedness weighted high, so the synth
             # produces a distracting auburn. Force near-black for eyebrows — they
@@ -1331,6 +1358,7 @@ def _build_material_mapping(applied):
                 "alpha_clip":    True,
                 "alpha_channel": alpha_channel,    # which channel of the atlas is the cutout mask
                 "alpha_stem":    alpha_stem,       # sidecar stem the viewer can load directly
+                "tangent_stem":  tangent_stem,     # MH _CardsAtlas_Tangent stem for anisotropic spec
                 "ignore_gltf_map": True,           # glTF may have carried the atlas as map — the
                                                    # viewer MUST discard it (it's not albedo).
             })

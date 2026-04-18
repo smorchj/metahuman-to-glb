@@ -496,10 +496,12 @@
         "alpha_clip": true,
         "alpha_channel": "r",
         "alpha_stem": "Eyebrows_L_Scraggly_CardsAtlas_Attribute",
+        "tangent_stem": "Eyebrows_L_Scraggly_CardsAtlas_Tangent",
         "ignore_gltf_map": true
       },
       "textures": {
-        "alpha_r": "textures/Eyebrows_L_Scraggly_CardsAtlas_Attribute.png"
+        "alpha_r": "textures/Eyebrows_L_Scraggly_CardsAtlas_Attribute.png",
+        "tangent_atlas": "textures/Eyebrows_L_Scraggly_CardsAtlas_Tangent.png"
       }
     },
     {
@@ -520,10 +522,12 @@
         "alpha_clip": true,
         "alpha_channel": "r",
         "alpha_stem": "Goatee_S_ChinStrap_CardsAtlas_Attribute",
+        "tangent_stem": "Goatee_S_ChinStrap_CardsAtlas_Tangent",
         "ignore_gltf_map": true
       },
       "textures": {
-        "alpha_r": "textures/Goatee_S_ChinStrap_CardsAtlas_Attribute.png"
+        "alpha_r": "textures/Goatee_S_ChinStrap_CardsAtlas_Attribute.png",
+        "tangent_atlas": "textures/Goatee_S_ChinStrap_CardsAtlas_Tangent.png"
       }
     },
     {
@@ -544,11 +548,13 @@
         "alpha_clip": true,
         "alpha_channel": "r",
         "alpha_stem": "Hair_M_SideSweptFringe_CardsAtlas_Attribute",
+        "tangent_stem": "Hair_M_SideSweptFringe_CardsAtlas_Tangent",
         "ignore_gltf_map": true
       },
       "textures": {
         "alpha": "Hair_M_SideSweptFringe_RootUVSeedCoverage",
-        "alpha_r": "textures/Hair_M_SideSweptFringe_CardsAtlas_Attribute.png"
+        "alpha_r": "textures/Hair_M_SideSweptFringe_CardsAtlas_Attribute.png",
+        "tangent_atlas": "textures/Hair_M_SideSweptFringe_CardsAtlas_Tangent.png"
       }
     },
     {
@@ -569,10 +575,12 @@
         "alpha_clip": true,
         "alpha_channel": "r",
         "alpha_stem": "Mustache_L_Wavy_CardsAtlas_Attribute",
+        "tangent_stem": "Mustache_L_Wavy_CardsAtlas_Tangent",
         "ignore_gltf_map": true
       },
       "textures": {
-        "alpha_r": "textures/Mustache_L_Wavy_CardsAtlas_Attribute.png"
+        "alpha_r": "textures/Mustache_L_Wavy_CardsAtlas_Attribute.png",
+        "tangent_atlas": "textures/Mustache_L_Wavy_CardsAtlas_Tangent.png"
       }
     }
   ]

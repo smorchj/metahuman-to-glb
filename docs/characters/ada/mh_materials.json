@@ -484,9 +484,11 @@
         "alpha_clip": true,
         "alpha_channel": "r",
         "alpha_stem": "Eyebrows_M_Thin_CardsAtlas_Attribute",
+        "tangent_stem": "Eyebrows_M_Thin_CardsAtlas_Tangent",
         "ignore_gltf_map": true
       },
       "textures": {
+        "tangent_atlas": "textures/Eyebrows_M_Thin_CardsAtlas_Tangent.png",
         "alpha_r": "textures/Eyebrows_M_Thin_CardsAtlas_Attribute.png"
       }
     },
@@ -508,9 +510,11 @@
         "alpha_clip": true,
         "alpha_channel": "r",
         "alpha_stem": "Hair_S_Coil_CardsAtlas_Attribute",
+        "tangent_stem": "Hair_S_Coil_CardsAtlas_Tangent",
         "ignore_gltf_map": true
       },
       "textures": {
+        "tangent_atlas": "textures/Hair_S_Coil_CardsAtlas_Tangent.png",
         "alpha_r": "textures/Hair_S_Coil_CardsAtlas_Attribute.png",
         "alpha": "Hair_S_Coil_RootUVSeedCoverage"
       }
@@ -533,9 +537,11 @@
         "alpha_clip": true,
         "alpha_channel": "r",
         "alpha_stem": "Hair_S_Coil_CardsAtlas_Attribute",
+        "tangent_stem": "Hair_S_Coil_CardsAtlas_Tangent",
         "ignore_gltf_map": true
       },
       "textures": {
+        "tangent_atlas": "textures/Hair_S_Coil_CardsAtlas_Tangent.png",
         "alpha_r": "textures/Hair_S_Coil_CardsAtlas_Attribute.png",
         "alpha": "Hair_S_Coil_RootUVSeedCoverage"
       }
