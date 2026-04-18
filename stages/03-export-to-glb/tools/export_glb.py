@@ -333,7 +333,14 @@ def main() -> int:
             export_draco_mesh_compression_enable=draco,
             export_draco_mesh_compression_level=6,
             export_skins=True,
-            export_morph=False,  # v1: drop MH face rig blend shapes (hundreds of MiB)
+            # Morph targets enabled so the face carries its 52 ARKit-named
+            # shape keys (transplanted in stage 02 by apply_arkit52.py from a
+            # frozen reference). The raw ~822 DNA action units would balloon
+            # the GLB to ~350 MiB per character; 52 ARKit keys keep it at
+            # ~20 MiB and are directly drivable from LiveLink-Face JSON.
+            export_morph=True,
+            export_morph_normal=True,
+            export_morph_tangent=False,  # tangents blow up size with no visual gain on MH faces
             export_cameras=False,
             export_lights=False,
         )

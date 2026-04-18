@@ -153,10 +153,14 @@ def _build_gallery(
         tri = glb_mf.get("tri_count", 0)
         mib = _safe_mib(glb_mf.get("file_size_bytes", 0))
         has_map = (workspace / "characters" / cid / "03-glb" / "mh_materials.json").exists()
-        map_attr = f' data-map="characters/{cid}/mh_materials.json"' if has_map else ""
+        # Cache-bust GLB + mapping URLs too — the browser otherwise serves a
+        # stale GLB after a re-export and any shape-key / geometry changes
+        # stay invisible until a hard refresh.
+        cb = built_at.replace(":", "").replace("-", "")
+        map_attr = f' data-map="characters/{cid}/mh_materials.json?v={cb}"' if has_map else ""
         cards.append(
             f'<a class="card" href="characters/{cid}/index.html">'
-            f'<div class="card-preview" data-glb="characters/{cid}/{cid}.glb"{map_attr}></div>'
+            f'<div class="card-preview" data-glb="characters/{cid}/{cid}.glb?v={cb}"{map_attr}></div>'
             f'<div class="meta">'
             f'<span class="name">{cid}</span>'
             f'<span class="stats"><span>{tri:,} tris</span>'

@@ -28,3 +28,8 @@ Thumbs.db
 # Claude Code / MCP scratch dirs
 .claude/
 .playwright-mcp/
+
+# Exploratory / throwaway scripts + captures. Keep the reference baker
+# (_scratch/bake_arkit_reference.py) around locally — its output
+# skills/reference/arkit52_deltas.npz is the committed artifact.
+_scratch/

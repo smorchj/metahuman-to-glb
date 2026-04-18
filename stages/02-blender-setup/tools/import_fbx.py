@@ -17,6 +17,13 @@ import sys
 
 import bpy
 
+# Make sibling modules importable when Blender runs this as a -P script.
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _THIS_DIR not in sys.path:
+    sys.path.insert(0, _THIS_DIR)
+import apply_arkit52  # noqa: E402  — sibling module; see apply_arkit52.py
+import apply_arkit52_grooms  # noqa: E402  — propagates face keys to beard/brows/etc.
+
 
 def _iso_now():
     return _dt.datetime.utcnow().isoformat(timespec="seconds") + "Z"
@@ -1395,6 +1402,28 @@ def main():
     hidden = _hide_non_lod0()
     print(f"[stage02] hid {len(hidden)} non-LOD0 meshes", flush=True)
 
+    # ARKit 52 transplant must run BEFORE _wire_materials. Stage 02's material
+    # wiring replaces the FBX-imported materials with pipeline-built ones, so
+    # the original UE names (MI_HeadSynthesized_Baked / MI_EyeRefractive_*)
+    # that we classify regions by only exist at this point. Result: replaces
+    # the ~822 raw DNA morph targets with 52 ARKit-named shape keys.
+    arkit_npz = os.path.join(ws, "skills", "reference", "arkit52_deltas.npz")
+    try:
+        arkit_summary = apply_arkit52.apply(arkit_npz, char_id=args.char)
+    except Exception as exc:
+        arkit_summary = {"error": str(exc)}
+        print(f"[stage02] ERROR apply_arkit52: {exc}", flush=True)
+
+    # Propagate the face's freshly-stamped ARKit shape keys onto every
+    # facial-groom mesh (brows, beard, mustache, goatee, stubble,…) via
+    # k-NN-weighted per-vertex sampling. Scalp hair (Hair_*) is skipped;
+    # eyelashes live on the face mesh so they inherit morphs implicitly.
+    try:
+        grooms_summary = apply_arkit52_grooms.apply(char_id=args.char)
+    except Exception as exc:
+        grooms_summary = {"error": str(exc)}
+        print(f"[stage02] ERROR apply_arkit52_grooms: {exc}", flush=True)
+
     applied = _wire_materials(mh, in_root)
     with_tex = sum(1 for a in applied if a["textures"])
     print(f"[stage02] wired {len(applied)} material slots "
@@ -1414,6 +1443,8 @@ def main():
         "scene":        summary,
         "hidden_non_lod0": hidden,
         "materials_applied": applied,
+        "arkit52":      arkit_summary,
+        "arkit52_grooms": grooms_summary,
     }
     bm_path = os.path.join(out_root, "blend_manifest.json")
     with open(bm_path, "w", encoding="utf-8") as f:

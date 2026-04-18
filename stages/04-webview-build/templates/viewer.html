@@ -33,8 +33,8 @@
   <script type="module">
     import { mount } from '../../assets/viewer.js?v={{cache_bust}}';
     mount(document.getElementById('stage'), {
-      glbUrl: '{{glb_file}}',
-      mappingUrl: 'mh_materials.json',
+      glbUrl: '{{glb_file}}?v={{cache_bust}}',
+      mappingUrl: 'mh_materials.json?v={{cache_bust}}',
       autoRotate: false,
       interactive: true,
     }).then((v) => { window.__viewer = v; }).catch((err) => {

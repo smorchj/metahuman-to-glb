@@ -134,6 +134,16 @@ export async function mount(container, opts) {
     buildHairTunePanel(container, hairMats);
   }
 
+  // Blendshape sliders: enable on interactive viewers so users can exercise
+  // the ARKit 52 shape keys transplanted in stage 02. Silently no-ops if the
+  // GLB has no morph targets.
+  if (interactive) {
+    const morphMeshes = collectMorphMeshes(gltf.scene);
+    if (morphMeshes.length > 0) {
+      buildBlendshapePanel(container, morphMeshes);
+    }
+  }
+
   autoFrame(camera, controls, gltf.scene);
 
   const ro = new ResizeObserver(() => {
@@ -1041,3 +1051,165 @@ function channelIndex(name) {
   }
 }
 function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+
+// ---------------- blendshape (ARKit 52) panel
+
+// ARKit 52 canonical groups — matches the reference bake naming. tongueOut is
+// included even though the dragonboots ref FBX is missing it; harmless if the
+// key isn't present on the mesh, the entry just won't render.
+const BLENDSHAPE_GROUPS = [
+  ['eyes', [
+    'eyeBlinkLeft', 'eyeBlinkRight',
+    'eyeLookDownLeft', 'eyeLookDownRight',
+    'eyeLookInLeft', 'eyeLookInRight',
+    'eyeLookOutLeft', 'eyeLookOutRight',
+    'eyeLookUpLeft', 'eyeLookUpRight',
+    'eyeSquintLeft', 'eyeSquintRight',
+    'eyeWideLeft', 'eyeWideRight',
+  ]],
+  ['brows', [
+    'browDownLeft', 'browDownRight',
+    'browInnerUp',
+    'browOuterUpLeft', 'browOuterUpRight',
+  ]],
+  ['cheeks & nose', [
+    'cheekPuff',
+    'cheekSquintLeft', 'cheekSquintRight',
+    'noseSneerLeft', 'noseSneerRight',
+  ]],
+  ['jaw', [
+    'jawForward', 'jawLeft', 'jawRight', 'jawOpen',
+  ]],
+  ['mouth', [
+    'mouthClose', 'mouthFunnel', 'mouthPucker',
+    'mouthLeft', 'mouthRight',
+    'mouthSmileLeft', 'mouthSmileRight',
+    'mouthFrownLeft', 'mouthFrownRight',
+    'mouthDimpleLeft', 'mouthDimpleRight',
+    'mouthStretchLeft', 'mouthStretchRight',
+    'mouthRollLower', 'mouthRollUpper',
+    'mouthShrugLower', 'mouthShrugUpper',
+    'mouthPressLeft', 'mouthPressRight',
+    'mouthLowerDownLeft', 'mouthLowerDownRight',
+    'mouthUpperUpLeft', 'mouthUpperUpRight',
+  ]],
+  ['tongue', ['tongueOut']],
+];
+
+// Walk the loaded scene, collect every mesh that carries morph targets. Returns
+// an array of { mesh, dict, influences } entries. dict maps shape-key name →
+// morphTargetInfluences index; we drive influences[idx] directly.
+function collectMorphMeshes(root) {
+  const out = [];
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    if (!o.morphTargetDictionary) return;
+    if (!o.morphTargetInfluences) return;
+    out.push({
+      mesh: o,
+      dict: o.morphTargetDictionary,
+      influences: o.morphTargetInfluences,
+    });
+  });
+  return out;
+}
+
+function buildBlendshapePanel(container, morphMeshes) {
+  container.style.position = container.style.position || 'relative';
+
+  // Collect union of shape key names actually present across meshes, so we
+  // only show sliders for keys that exist (keeps UI short if an ARKit name is
+  // missing on a given character).
+  const available = new Set();
+  for (const { dict } of morphMeshes) {
+    for (const name of Object.keys(dict)) available.add(name);
+  }
+
+  const root = document.createElement('div');
+  root.style.cssText = [
+    'position:absolute', 'top:8px', 'left:8px', 'z-index:10',
+    'font:12px/1.3 system-ui,-apple-system,sans-serif', 'color:#e8e8e8',
+    'background:rgba(18,20,26,0.88)', 'border:1px solid #2a2f3a',
+    'border-radius:6px', 'user-select:none', 'backdrop-filter:blur(6px)',
+    'max-height:calc(100% - 16px)', 'overflow:hidden', 'display:flex',
+    'flex-direction:column',
+  ].join(';');
+
+  const header = document.createElement('div');
+  header.textContent = 'blendshapes ▾';
+  header.style.cssText = 'padding:6px 10px;cursor:pointer;font-weight:600;letter-spacing:0.04em;flex:0 0 auto';
+  root.appendChild(header);
+
+  const body = document.createElement('div');
+  body.style.cssText = 'padding:4px 10px 10px;display:none;min-width:240px;max-width:260px;overflow-y:auto';
+  root.appendChild(body);
+
+  header.addEventListener('click', () => {
+    const open = body.style.display === 'none';
+    body.style.display = open ? 'block' : 'none';
+    header.textContent = open ? 'blendshapes ▴' : 'blendshapes ▾';
+  });
+
+  // Reset-all button
+  const resetRow = document.createElement('div');
+  resetRow.style.cssText = 'display:flex;gap:6px;margin:2px 0 6px';
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = 'reset all';
+  resetBtn.style.cssText = 'flex:1;padding:4px 8px;background:#2a2f3a;color:#e8e8e8;border:1px solid #3a4050;border-radius:4px;cursor:pointer;font:inherit';
+  resetRow.appendChild(resetBtn);
+  body.appendChild(resetRow);
+
+  const allSliders = [];
+
+  const setInfluence = (keyName, v) => {
+    for (const { dict, influences } of morphMeshes) {
+      const idx = dict[keyName];
+      if (idx !== undefined) influences[idx] = v;
+    }
+  };
+
+  const addSlider = (keyName) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:120px 1fr 32px;gap:6px;align-items:center;margin:2px 0';
+    const l = document.createElement('span');
+    l.textContent = keyName;
+    l.style.cssText = 'font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#cde';
+    l.title = keyName;
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = '0'; input.max = '1'; input.step = '0.01';
+    input.value = '0';
+    input.style.cssText = 'width:100%;accent-color:#7ab8ff';
+    const val = document.createElement('span');
+    val.style.cssText = 'text-align:right;font-variant-numeric:tabular-nums;color:#8a9;font-size:11px';
+    val.textContent = '0.00';
+    input.addEventListener('input', () => {
+      const v = Number(input.value);
+      val.textContent = v.toFixed(2);
+      setInfluence(keyName, v);
+    });
+    allSliders.push(() => { input.value = '0'; val.textContent = '0.00'; });
+    row.appendChild(l); row.appendChild(input); row.appendChild(val);
+    body.appendChild(row);
+  };
+
+  for (const [groupName, keys] of BLENDSHAPE_GROUPS) {
+    const present = keys.filter((k) => available.has(k));
+    if (present.length === 0) continue;
+    const h = document.createElement('div');
+    h.textContent = groupName;
+    h.style.cssText = 'margin:8px 0 2px;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#89a;border-bottom:1px solid #2a2f3a;padding-bottom:2px';
+    body.appendChild(h);
+    for (const key of present) addSlider(key);
+  }
+
+  resetBtn.addEventListener('click', () => {
+    for (const { influences } of morphMeshes) {
+      for (let i = 0; i < influences.length; i++) influences[i] = 0;
+    }
+    for (const reset of allSliders) reset();
+  });
+
+  container.appendChild(root);
+  console.log('[viewer] blendshape panel: ' + available.size + ' shape keys across ' + morphMeshes.length + ' mesh(es)');
+}
