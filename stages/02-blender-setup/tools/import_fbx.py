@@ -1092,6 +1092,14 @@ def _wire_materials(mh, in_root):
             # picks the canonical base color file first.
             candidates = {}
             for t in textures_by_mat.get(mat_path, []):
+                # Per-groom atlas textures carry a `component_hint`: skip any
+                # whose hint doesn't match this mesh's component. Without this,
+                # multiple facial grooms that all share MI_Facial_Hair (male
+                # MHs: eyebrows + goatee + mustache) would pool their coverage
+                # atlases together and Goatee could pick Mustache's mask.
+                hint = t.get("component_hint")
+                if hint and hint.lower() != comp:
+                    continue
                 fn = os.path.basename(t["file_path"])
                 kind = _classify_texture(fn)
                 if not kind:

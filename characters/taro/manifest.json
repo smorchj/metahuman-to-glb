@@ -7,29 +7,29 @@
   "stages": {
     "01_fbx_export": {
       "status": "done",
-      "started_at": "2026-04-18T08:09:06Z",
-      "completed_at": "2026-04-18T08:09:06Z",
+      "started_at": "2026-04-18T08:28:40Z",
+      "completed_at": "2026-04-18T08:28:40Z",
       "output_dir": "01-fbx/",
       "errors": []
     },
     "02_blender_setup": {
       "status": "done",
-      "started_at": "2026-04-18T08:11:00Z",
-      "completed_at": "2026-04-18T08:11:00Z",
+      "started_at": "2026-04-18T08:43:53Z",
+      "completed_at": "2026-04-18T08:43:53Z",
       "output_dir": "02-blend/",
       "errors": []
     },
     "03_glb_export": {
       "status": "done",
-      "started_at": "2026-04-18T08:12:40Z",
-      "completed_at": "2026-04-18T08:12:40Z",
+      "started_at": "2026-04-18T08:45:30Z",
+      "completed_at": "2026-04-18T08:45:30Z",
       "output_dir": "03-glb/",
       "errors": []
     },
     "04_webview_build": {
       "status": "done",
-      "started_at": "2026-04-18T08:13:33Z",
-      "completed_at": "2026-04-18T08:13:33Z",
+      "started_at": "2026-04-18T08:46:22Z",
+      "completed_at": "2026-04-18T08:46:22Z",
       "output_dir": "../../docs/characters/",
       "errors": []
     }

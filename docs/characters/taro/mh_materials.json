@@ -3,6 +3,81 @@
   "version": 1,
   "materials": [
     {
+      "material_name": "m_med_nrw_shs_runningshoes_cinematic_M_shoes",
+      "mesh": "m_med_nrw_shs_runningshoes_Cinematic_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Common/Materials/RunningShoes/M_shs_runningshoes.M_shs_runningshoes",
+      "kind": "cloth",
+      "face_slot": null,
+      "params": {
+        "diffuse_color_1": [
+          0.018079999834299088,
+          0.3330810070037842,
+          0.7447919845581055,
+          1.0
+        ],
+        "diffuse_color_2": [
+          0.640625,
+          0.640625,
+          0.640625,
+          0.0
+        ],
+        "roughness": 0.20000000298023224,
+        "metallic": 0.0,
+        "ao_amount": 1.0,
+        "detail_tiling": 1.0,
+        "detail_strength": 0.30000001192092896,
+        "macro_tiling": 1.0,
+        "macro_strength": 0.20000000298023224,
+        "mask_channel": "r"
+      },
+      "textures": {
+        "ao": "textures/shs_runningshoes_AO.png",
+        "mask": "textures/shs_runningshoes_Mask.png",
+        "normal": "textures/shs_runningshoes_N.png",
+        "macro_overlay": "textures/macro_heather_04.png",
+        "detail_normal": "macro_heather_04_normal"
+      }
+    },
+    {
+      "material_name": "m_med_nrw_top_hoodie_nrm_cinematic_lambert1",
+      "mesh": "m_med_nrw_top_hoodie_nrm_Cinematic_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Common/Materials/Hoodie/M_top_hoodie.M_top_hoodie",
+      "kind": "cloth",
+      "face_slot": null,
+      "params": {
+        "diffuse_color_1": [
+          0.038203999400138855,
+          0.038203999400138855,
+          0.038203999400138855,
+          1.0
+        ],
+        "diffuse_color_2": [
+          0.038203999400138855,
+          0.25818300247192383,
+          1.0,
+          1.0
+        ],
+        "roughness": 0.75,
+        "metallic": 0.0,
+        "ao_amount": 0.85,
+        "detail_tiling": 75.0,
+        "detail_strength": 0.20000000298023224,
+        "macro_tiling": 6.0,
+        "macro_strength": 0.10000000149011612,
+        "mask_channel": "r"
+      },
+      "textures": {
+        "macro_overlay": "textures/macro_heather_04.png",
+        "ao": "textures/top_hoodie_AO.png",
+        "mask": "textures/top_hoodie_Mask.png",
+        "normal": "textures/top_hoodie_N.png",
+        "detail_diffuse": "textures/micro_doubleKnit_front_AOHCA_M.png",
+        "detail_normal": "micro_knit_front_N"
+      }
+    },
+    {
       "material_name": "m_med_nrw_body_MI_BodySynthesized",
       "mesh": "m_med_nrw_body_LOD0",
       "slot_index": 0,
@@ -17,6 +92,43 @@
         "normal": "textures/male_body_normal_map.png",
         "roughness": "textures/male_body_roughness_map.png",
         "basecolor": "textures/BodyBaseColor.png"
+      }
+    },
+    {
+      "material_name": "m_med_nrw_btm_jeans_nrm_cinematic_lambert3",
+      "mesh": "m_med_nrw_btm_jeans_nrm_Cinematic_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Common/Materials/Jeans/M_btm_jeans_nrm.M_btm_jeans_nrm",
+      "kind": "cloth",
+      "face_slot": null,
+      "params": {
+        "diffuse_color_1": [
+          0.015995999798178673,
+          0.015995999798178673,
+          0.015995999798178673,
+          1.0
+        ],
+        "diffuse_color_2": [
+          0.010329999960958958,
+          0.03954600170254707,
+          0.0930590033531189,
+          1.0
+        ],
+        "roughness": 0.75,
+        "metallic": 0.0,
+        "ao_amount": 0.85,
+        "detail_tiling": 80.0,
+        "detail_strength": 0.6,
+        "macro_tiling": 3.0,
+        "macro_strength": 0.5,
+        "mask_channel": "r"
+      },
+      "textures": {
+        "ao": "textures/btm_jeans_nrm_AO.png",
+        "mask": "textures/btm_jeans_nrm_Mask.png",
+        "normal": "textures/btm_jeans_nrm_N.png",
+        "detail_normal": "micro_jeans_tile_N",
+        "roughness": "textures/btm_jeans_nrm_roughness_mask.png"
       }
     },
     {
@@ -367,118 +479,6 @@
       }
     },
     {
-      "material_name": "m_med_nrw_shs_runningshoes_cinematic_M_shoes",
-      "mesh": "m_med_nrw_shs_runningshoes_Cinematic_LOD0",
-      "slot_index": 0,
-      "material_source": "/Game/MetaHumans/Common/Materials/RunningShoes/M_shs_runningshoes.M_shs_runningshoes",
-      "kind": "cloth",
-      "face_slot": null,
-      "params": {
-        "diffuse_color_1": [
-          0.018079999834299088,
-          0.3330810070037842,
-          0.7447919845581055,
-          1.0
-        ],
-        "diffuse_color_2": [
-          0.640625,
-          0.640625,
-          0.640625,
-          0.0
-        ],
-        "roughness": 0.20000000298023224,
-        "metallic": 0.0,
-        "ao_amount": 1.0,
-        "detail_tiling": 1.0,
-        "detail_strength": 0.30000001192092896,
-        "macro_tiling": 1.0,
-        "macro_strength": 0.20000000298023224,
-        "mask_channel": "r"
-      },
-      "textures": {
-        "ao": "textures/shs_runningshoes_AO.png",
-        "mask": "textures/shs_runningshoes_Mask.png",
-        "normal": "textures/shs_runningshoes_N.png",
-        "macro_overlay": "textures/macro_heather_04.png",
-        "detail_normal": "macro_heather_04_normal"
-      }
-    },
-    {
-      "material_name": "m_med_nrw_btm_jeans_nrm_cinematic_lambert3",
-      "mesh": "m_med_nrw_btm_jeans_nrm_Cinematic_LOD0",
-      "slot_index": 0,
-      "material_source": "/Game/MetaHumans/Common/Materials/Jeans/M_btm_jeans_nrm.M_btm_jeans_nrm",
-      "kind": "cloth",
-      "face_slot": null,
-      "params": {
-        "diffuse_color_1": [
-          0.015995999798178673,
-          0.015995999798178673,
-          0.015995999798178673,
-          1.0
-        ],
-        "diffuse_color_2": [
-          0.010329999960958958,
-          0.03954600170254707,
-          0.0930590033531189,
-          1.0
-        ],
-        "roughness": 0.75,
-        "metallic": 0.0,
-        "ao_amount": 0.85,
-        "detail_tiling": 80.0,
-        "detail_strength": 0.6,
-        "macro_tiling": 3.0,
-        "macro_strength": 0.5,
-        "mask_channel": "r"
-      },
-      "textures": {
-        "ao": "textures/btm_jeans_nrm_AO.png",
-        "mask": "textures/btm_jeans_nrm_Mask.png",
-        "normal": "textures/btm_jeans_nrm_N.png",
-        "detail_normal": "micro_jeans_tile_N",
-        "roughness": "textures/btm_jeans_nrm_roughness_mask.png"
-      }
-    },
-    {
-      "material_name": "m_med_nrw_top_hoodie_nrm_cinematic_lambert1",
-      "mesh": "m_med_nrw_top_hoodie_nrm_Cinematic_LOD0",
-      "slot_index": 0,
-      "material_source": "/Game/MetaHumans/Common/Materials/Hoodie/M_top_hoodie.M_top_hoodie",
-      "kind": "cloth",
-      "face_slot": null,
-      "params": {
-        "diffuse_color_1": [
-          0.038203999400138855,
-          0.038203999400138855,
-          0.038203999400138855,
-          1.0
-        ],
-        "diffuse_color_2": [
-          0.038203999400138855,
-          0.25818300247192383,
-          1.0,
-          1.0
-        ],
-        "roughness": 0.75,
-        "metallic": 0.0,
-        "ao_amount": 0.85,
-        "detail_tiling": 75.0,
-        "detail_strength": 0.20000000298023224,
-        "macro_tiling": 6.0,
-        "macro_strength": 0.10000000149011612,
-        "mask_channel": "r"
-      },
-      "textures": {
-        "macro_overlay": "textures/macro_heather_04.png",
-        "ao": "textures/top_hoodie_AO.png",
-        "mask": "textures/top_hoodie_Mask.png",
-        "normal": "textures/top_hoodie_N.png",
-        "detail_diffuse": "textures/micro_doubleKnit_front_AOHCA_M.png",
-        "detail_normal": "micro_knit_front_N"
-      }
-    },
-    {
       "material_name": "eyebrows_l_scraggly_cardsmesh_group0_lod0_lambert1",
       "mesh": "Eyebrows_L_Scraggly_CardsMesh_Group0_LOD0",
       "slot_index": 0,
@@ -506,6 +506,30 @@
       "material_name": "goatee_s_chinstrap_cardsmesh_group0_lod0_MaterialSlot",
       "mesh": "Goatee_S_ChinStrap_CardsMesh_Group0_LOD0",
       "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Taro/Materials/MI_Facial_Hair.MI_Facial_Hair",
+      "kind": "hair",
+      "face_slot": null,
+      "params": {
+        "base_color": [
+          0.03886863069904712,
+          0.01950521012985891,
+          0.010971221748244699,
+          1.0
+        ],
+        "roughness": 0.6116719841957092,
+        "alpha_clip": true,
+        "alpha_channel": "r",
+        "alpha_stem": "Goatee_S_ChinStrap_CardsAtlas_Attribute",
+        "ignore_gltf_map": true
+      },
+      "textures": {
+        "alpha_r": "textures/Goatee_S_ChinStrap_CardsAtlas_Attribute.png"
+      }
+    },
+    {
+      "material_name": "hair_m_sidesweptfringe_cardsmesh_group0_lod0_MaterialSlot",
+      "mesh": "Hair_M_SideSweptFringe_CardsMesh_Group0_LOD0",
+      "slot_index": 0,
       "material_source": "/Game/MetaHumans/Taro/Materials/MI_Hair_Cards.MI_Hair_Cards",
       "kind": "hair",
       "face_slot": null,
@@ -519,12 +543,36 @@
         "roughness": 0.3700000047683716,
         "alpha_clip": true,
         "alpha_channel": "r",
-        "alpha_stem": "Goatee_S_ChinStrap_CardsAtlas_Attribute",
+        "alpha_stem": "Hair_M_SideSweptFringe_CardsAtlas_Attribute",
         "ignore_gltf_map": true
       },
       "textures": {
-        "alpha_r": "textures/Goatee_S_ChinStrap_CardsAtlas_Attribute.png",
-        "alpha": "Hair_M_SideSweptFringe_RootUVSeedCoverage"
+        "alpha": "Hair_M_SideSweptFringe_RootUVSeedCoverage",
+        "alpha_r": "textures/Hair_M_SideSweptFringe_CardsAtlas_Attribute.png"
+      }
+    },
+    {
+      "material_name": "mustache_l_wavy_cardsmesh_group0_lod0_MaterialSlot",
+      "mesh": "Mustache_L_Wavy_CardsMesh_Group0_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Taro/Materials/MI_Facial_Hair.MI_Facial_Hair",
+      "kind": "hair",
+      "face_slot": null,
+      "params": {
+        "base_color": [
+          0.03886863069904712,
+          0.01950521012985891,
+          0.010971221748244699,
+          1.0
+        ],
+        "roughness": 0.6116719841957092,
+        "alpha_clip": true,
+        "alpha_channel": "r",
+        "alpha_stem": "Mustache_L_Wavy_CardsAtlas_Attribute",
+        "ignore_gltf_map": true
+      },
+      "textures": {
+        "alpha_r": "textures/Mustache_L_Wavy_CardsAtlas_Attribute.png"
       }
     }
   ]

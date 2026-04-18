@@ -208,8 +208,9 @@ def _lookup_hair_card_material_for(mh_folder, comp_name):
     as `MI_Hair_Cards` (scalp hair) or `MI_Facial_Hair` (eyebrows/lashes).
 
     Returns the unreal.MaterialInstance, or None if nothing suitable was found.
-    Selection is by component name: 'eyebrow'/'eyelash' → facial hair MI, everything
-    else (head-hair groups) → cards MI."""
+    Selection is by component name: facial grooms (eyebrow/eyelash/mustache/goatee/
+    beard/sideburns/chinstrap/stubble/peachfuzz) → MI_Facial_Hair*, everything
+    else (scalp-hair groups like Hair_*, Fringe_*, etc.) → MI_Hair_Cards / MI_Hair*."""
     ar = _asset_registry()
     try:
         filt = unreal.ARFilter(
@@ -223,9 +224,19 @@ def _lookup_hair_card_material_for(mh_folder, comp_name):
             class_names=["MaterialInstanceConstant"],
             recursive_paths=True,
         )
-    want_facial = any(k in comp_name for k in ("eyebrow", "eyelash"))
-    priorities = (["mi_facial_hair"] if want_facial
-                  else ["mi_hair_cards", "mi_hair1", "mi_hair2", "mi_hair"])
+    # Facial-groom naming is not Ada-specific: male MHs add mustache/goatee/beard/
+    # sideburns. Peachfuzz is also wired to MI_Facial_Hair in MH content.
+    facial_keys = (
+        "eyebrow", "eyelash",
+        "mustache", "moustache", "goatee", "beard", "chinstrap",
+        "sideburn", "stubble", "peachfuzz",
+    )
+    want_facial = any(k in comp_name for k in facial_keys)
+    priorities = (
+        ["mi_facial_hair", "mi_facial_hair1", "mi_facial_hair2"]
+        if want_facial
+        else ["mi_hair_cards", "mi_hair", "mi_hair1", "mi_hair2", "mi_hair3", "mi_hair4"]
+    )
     by_name = {}
     for a in ar.get_assets(filt) or []:
         by_name[str(a.asset_name).lower()] = a
@@ -836,13 +847,25 @@ def main(char=None, workspace=None):
                     "material": override_mi_path,
                     "param": None,
                     "source": "groom_atlas",
+                    # Per-groom atlas — stage 02 must not let Goatee's coverage
+                    # bleed into Mustache's material when both share MI_Facial_Hair.
+                    "component_hint": comp,
                 })
             _log(f"    groom atlas textures for {groom.get_name()}: {len(groom_tex_records)}")
         texture_records.extend(groom_tex_records)
 
         mats = []
-        for slot, mi in _iter_materials_on_static_mesh(mesh):
+        # Collect slots first so we can synthesise one if the StaticMesh has no
+        # populated static_materials entries (common on male MHs where scalp
+        # Hair/Mustache card meshes ship with empty slots — the real MI is
+        # wired at runtime by the GroomComponent, not baked onto the mesh).
+        slot_pairs = list(_iter_materials_on_static_mesh(mesh))
+        if not slot_pairs and override_mi is not None:
+            slot_pairs = [("MaterialSlot", override_mi)]
+        for slot, mi in slot_pairs:
             effective_mi = override_mi if override_mi is not None else mi
+            if effective_mi is None:
+                continue
             mi_path = effective_mi.get_path_name()
             mats.append({
                 "slot": slot,
