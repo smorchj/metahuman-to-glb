@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MetaHuman gallery</title>
+  <link rel="stylesheet" href="assets/style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body class="gallery">
+  <header>
+    <h1>MetaHuman &rarr; GLB</h1>
+    <p class="sub">Characters exported from Unreal Engine to web-ready GLB.</p>
+  </header>
+
+  <main class="grid">
+    <a class="card" href="characters/ada/index.html"><div class="card-preview" data-glb="characters/ada/ada.glb" data-map="characters/ada/mh_materials.json"></div><div class="meta"><span class="name">ada</span><span class="stats"><span>191,088 tris</span><span>&middot;</span><span>19.1 MiB</span></span></div></a>
+  </main>
+
+  <footer>
+    <span>1 characters</span>
+    <span>&middot;</span>
+    <span>built 2026-04-18T05:54:55Z</span>
+  </footer>
+
+  <script type="module">
+    import { mount } from './assets/viewer.js?v=20260418T055455Z';
+    for (const el of document.querySelectorAll('.card-preview')) {
+      mount(el, {
+        glbUrl: el.dataset.glb,
+        mappingUrl: el.dataset.map || null,
+        autoRotate: true,
+        interactive: false,
+      }).catch((err) => console.warn('[gallery] card mount failed', err));
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,113 @@
+:root {
+  --bg: #0f1115;
+  --fg: #e8ebf0;
+  --muted: #8b93a3;
+  --accent: #7cc4ff;
+  --card: #191c22;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+header {
+  padding: 24px 32px;
+  border-bottom: 1px solid #222831;
+}
+header h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+header .sub {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+footer {
+  padding: 16px 32px;
+  border-top: 1px solid #222831;
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+/* ----------------------------------------- gallery */
+
+.gallery .grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  padding: 24px 32px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid #222831;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 120ms ease;
+  color: inherit;
+  text-decoration: none;
+}
+.card:hover { border-color: var(--accent); text-decoration: none; }
+.card .card-preview {
+  width: 100%;
+  height: 320px;
+  background: #0b0d11;
+  pointer-events: none;   /* let clicks pass through to the <a> wrapper */
+  position: relative;
+}
+.card .card-preview canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+.card .meta {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.card .meta .name {
+  font-weight: 600;
+  font-size: 15px;
+}
+.card .meta .stats {
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+/* ----------------------------------------- viewer */
+
+.viewer { display: flex; flex-direction: column; height: 100vh; }
+.viewer header { display: flex; align-items: baseline; gap: 16px; }
+.viewer header h1 { font-size: 18px; }
+.viewer .back { font-size: 13px; color: var(--muted); }
+.viewer .stage {
+  flex: 1;
+  width: 100%;
+  background: #0b0d11;
+  position: relative;
+  min-height: 0;
+}
+.viewer .stage canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}

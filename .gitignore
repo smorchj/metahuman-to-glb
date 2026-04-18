@@ -1,0 +1,26 @@
+# Per-character working artifacts — rebuild locally by running the pipeline.
+# Keep only manifest.json + source/README.md for each character.
+characters/*/01-fbx/
+characters/*/02-blend/
+characters/*/03-glb/
+
+# Python / tooling noise
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Blender scratch
+*.blend1
+*.blend@
+
+# Local screenshots (not part of the repo; keep the ones referenced from README)
+# ada-v3.png + ada-viewer.png are local dev captures — exclude by default
+/ada-v3.png
+/ada-viewer.png

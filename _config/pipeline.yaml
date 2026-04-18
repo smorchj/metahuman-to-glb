@@ -1,0 +1,28 @@
+# Pipeline configuration — single source of truth for paths and versions.
+# Stages read this via their CONTEXT.md Inputs table.
+
+ue_project_path: "C:/Users/smorc/Documents/Unreal Projects/MetaHumans/MetaHumans.uproject"
+ue_editor_cmd:   "C:/Program Files/Epic Games/UE_5.6/Engine/Binaries/Win64/UnrealEditor-Cmd.exe"
+ue_version:      "5.6.1"
+
+blender_exe:     "C:/Program Files/Blender Foundation/Blender 5.0/blender.exe"
+
+# Where per-character working artifacts live (relative to workspace root)
+characters_dir:  "characters"
+
+# Active character for single-character runs
+active_character: "ada"
+
+# GLB web constraints — enforced in stage 03
+glb_constraints:
+  max_texture_px: 1024
+  draco_compression: true
+  target_tri_budget: 60000
+  skip_groom: true          # v1: groom hair is not exported
+
+# Stage 01 options
+stage_01:
+  bake_material_inputs: false     # names only; we export textures ourselves
+  export_morph_targets: true
+  export_lod: 0                   # LOD0 only for v1
+  texture_format: "TGA"           # TGA preserves alpha + is Blender-friendly

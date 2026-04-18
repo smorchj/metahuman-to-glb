@@ -1,0 +1,544 @@
+{
+  "character_id": "ada",
+  "version": 1,
+  "materials": [
+    {
+      "material_name": "f_med_nrw_shs_flats_cinematic_lambert1",
+      "mesh": "f_med_nrw_shs_flats_Cinematic_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Common/Materials/Flats/M_shs_flats.M_shs_flats",
+      "kind": "cloth",
+      "face_slot": null,
+      "params": {
+        "diffuse_color_1": [
+          0.014918999746441841,
+          0.2748500108718872,
+          0.6145830154418945,
+          1.0
+        ],
+        "diffuse_color_2": [
+          0.7135419845581055,
+          0.7135419845581055,
+          0.7135419845581055,
+          1.0
+        ],
+        "roughness": 0.75,
+        "metallic": 0.0,
+        "ao_amount": 0.85,
+        "detail_tiling": 85.0,
+        "detail_strength": 0.5,
+        "macro_tiling": 3.0,
+        "macro_strength": 0.5,
+        "mask_channel": "r"
+      },
+      "textures": {
+        "normal": "textures/shs_flats_N.png",
+        "mask": "textures/shs_flats_Mask.png",
+        "ao": "textures/shs_flats_AO.png"
+      }
+    },
+    {
+      "material_name": "ada_facemesh_head_shader_shader",
+      "mesh": "Ada_FaceMesh_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Ada/Face/Materials/Baked/MI_HeadSynthesized_Baked.MI_HeadSynthesized_Baked",
+      "kind": "skin",
+      "face_slot": "head_skin",
+      "params": {
+        "roughness_bias": 0.0
+      },
+      "textures": {
+        "roughness": "textures/FaceRoughness_MAIN.png",
+        "normal": "textures/FaceNormal_MAIN.png",
+        "basecolor": "textures/FaceColor_MAIN.png",
+        "ao": "textures/FaceCavity_MAIN.png"
+      }
+    },
+    {
+      "material_name": "ada_facemesh_teeth_shader_shader",
+      "mesh": "Ada_FaceMesh_LOD0",
+      "slot_index": 1,
+      "material_source": "/Game/MetaHumans/Ada/Materials/M_TeethCharacterCreator_Inst.M_TeethCharacterCreator_Inst",
+      "kind": "face_accessory",
+      "face_slot": "teeth",
+      "params": {
+        "base_color": [
+          0.85,
+          0.78,
+          0.7,
+          1.0
+        ],
+        "roughness": 0.35
+      },
+      "textures": {}
+    },
+    {
+      "material_name": "ada_facemesh_saliva_shader_shader",
+      "mesh": "Ada_FaceMesh_LOD0",
+      "slot_index": 2,
+      "material_source": "/Game/MetaHumans/Common/Face/Materials/MI_lacrimal_fluid_Inst.MI_lacrimal_fluid_Inst",
+      "kind": "face_accessory",
+      "face_slot": "wet",
+      "params": {
+        "base_color": [
+          0.9,
+          0.85,
+          0.8,
+          1.0
+        ],
+        "roughness": 0.5
+      },
+      "textures": {}
+    },
+    {
+      "material_name": "ada_facemesh_eyeLeft_shader_shader",
+      "mesh": "Ada_FaceMesh_LOD0",
+      "slot_index": 3,
+      "material_source": "/Game/MetaHumans/Ada/Face/Materials/MI_EyeRefractive_Inst_L.MI_EyeRefractive_Inst_L",
+      "kind": "face_accessory",
+      "face_slot": "eye_refractive",
+      "params": {
+        "eye_pole_uv": [
+          0.4883885513314857,
+          0.5037298562991204
+        ],
+        "uv_scale": 4.0,
+        "iris_color": [
+          0.176,
+          0.077,
+          0.045,
+          1.0
+        ],
+        "iris_dark": [
+          0.036,
+          0.015,
+          0.0,
+          1.0
+        ],
+        "sclera_color": [
+          0.92,
+          0.9,
+          0.86,
+          1.0
+        ],
+        "pupil_color": [
+          0.005,
+          0.005,
+          0.005,
+          1.0
+        ],
+        "vein_color": [
+          0.62,
+          0.18,
+          0.15,
+          1.0
+        ],
+        "veins_power": 0.5,
+        "limbus_start": 0.095,
+        "iris_radius_in": 0.131,
+        "iris_radius_out": 0.146,
+        "pupil_radius_in": 0.022,
+        "pupil_radius_out": 0.046,
+        "fibril_from_min": 0.25,
+        "fibril_from_max": 0.75,
+        "fibril_to_min": 0.65,
+        "fibril_to_max": 1.15
+      },
+      "textures": {
+        "basecolor": "textures/T_Iris_A_M.png"
+      }
+    },
+    {
+      "material_name": "ada_facemesh_eyeRight_shader_shader",
+      "mesh": "Ada_FaceMesh_LOD0",
+      "slot_index": 4,
+      "material_source": "/Game/MetaHumans/Ada/Face/Materials/MI_EyeRefractive_Inst_R.MI_EyeRefractive_Inst_R",
+      "kind": "face_accessory",
+      "face_slot": "eye_refractive",
+      "params": {
+        "eye_pole_uv": [
+          0.5087699054536939,
+          0.5042725668248146
+        ],
+        "uv_scale": 4.0,
+        "iris_color": [
+          0.176,
+          0.077,
+          0.045,
+          1.0
+        ],
+        "iris_dark": [
+          0.036,
+          0.015,
+          0.0,
+          1.0
+        ],
+        "sclera_color": [
+          0.92,
+          0.9,
+          0.86,
+          1.0
+        ],
+        "pupil_color": [
+          0.005,
+          0.005,
+          0.005,
+          1.0
+        ],
+        "vein_color": [
+          0.62,
+          0.18,
+          0.15,
+          1.0
+        ],
+        "veins_power": 0.5,
+        "limbus_start": 0.095,
+        "iris_radius_in": 0.131,
+        "iris_radius_out": 0.146,
+        "pupil_radius_in": 0.022,
+        "pupil_radius_out": 0.046,
+        "fibril_from_min": 0.25,
+        "fibril_from_max": 0.75,
+        "fibril_to_min": 0.65,
+        "fibril_to_max": 1.15
+      },
+      "textures": {
+        "basecolor": "textures/T_Iris_A_M.png"
+      }
+    },
+    {
+      "material_name": "ada_facemesh_eyeshell_shader_shader",
+      "mesh": "Ada_FaceMesh_LOD0",
+      "slot_index": 5,
+      "material_source": "/Game/MetaHumans/Common/Face/Materials/MI_EyeOcclusion_Inst.MI_EyeOcclusion_Inst",
+      "kind": "face_accessory",
+      "face_slot": "eye_occlusion",
+      "params": {
+        "base_color": [
+          0.9,
+          0.85,
+          0.8,
+          1.0
+        ],
+        "roughness": 0.5
+      },
+      "textures": {}
+    },
+    {
+      "material_name": "ada_facemesh_eyelashes_shader_shader",
+      "mesh": "Ada_FaceMesh_LOD0",
+      "slot_index": 6,
+      "material_source": "/Game/MetaHumans/Ada/Materials/M_EyelashLowerLODs_Inst.M_EyelashLowerLODs_Inst",
+      "kind": "face_accessory",
+      "face_slot": "eyelashes",
+      "params": {
+        "base_color": [
+          0.05,
+          0.04,
+          0.03,
+          1.0
+        ],
+        "roughness": 0.7,
+        "alpha_clip": true
+      },
+      "textures": {
+        "alpha": "textures/Eyelashes_L_SlightCurl_Coverage.png"
+      }
+    },
+    {
+      "material_name": "ada_facemesh_eyeEdge_shader_shader",
+      "mesh": "Ada_FaceMesh_LOD0",
+      "slot_index": 7,
+      "material_source": "/Game/MetaHumans/Common/Face/Materials/MI_lacrimal_fluid_Inst.MI_lacrimal_fluid_Inst",
+      "kind": "face_accessory",
+      "face_slot": "wet",
+      "params": {
+        "base_color": [
+          0.9,
+          0.85,
+          0.8,
+          1.0
+        ],
+        "roughness": 0.5
+      },
+      "textures": {}
+    },
+    {
+      "material_name": "ada_facemesh_cartilage_shader_shader",
+      "mesh": "Ada_FaceMesh_LOD0",
+      "slot_index": 8,
+      "material_source": "/Game/MetaHumans/Common/Face/Materials/M_Cartilage.M_Cartilage",
+      "kind": "face_accessory",
+      "face_slot": "cartilage",
+      "params": {
+        "base_color": [
+          0.9,
+          0.85,
+          0.8,
+          1.0
+        ],
+        "roughness": 0.5
+      },
+      "textures": {}
+    },
+    {
+      "material_name": "ada_facemesh_head_LOD1_shader_shader",
+      "mesh": "Ada_FaceMesh_LOD0",
+      "slot_index": 9,
+      "material_source": "/Game/MetaHumans/Ada/Face/Materials/Baked/MI_HeadSynthesized_Baked_LOD1.MI_HeadSynthesized_Baked_LOD1",
+      "kind": "skin",
+      "face_slot": "head_skin",
+      "params": {
+        "roughness_bias": 0.0
+      },
+      "textures": {
+        "roughness": "textures/FaceRoughness_MAIN.png",
+        "normal": "textures/FaceNormal_MAIN.png",
+        "basecolor": "textures/FaceColor_MAIN.png",
+        "ao": "textures/FaceCavity_MAIN.png"
+      }
+    },
+    {
+      "material_name": "ada_facemesh_eyelashes_HiLOD_shader_shader",
+      "mesh": "Ada_FaceMesh_LOD0",
+      "slot_index": 10,
+      "material_source": "/Game/MetaHumans/Ada/Materials/M_EyeLash_HigherLODs_Inst.M_EyeLash_HigherLODs_Inst",
+      "kind": "face_accessory",
+      "face_slot": "eyelashes",
+      "params": {
+        "base_color": [
+          0.05,
+          0.04,
+          0.03,
+          1.0
+        ],
+        "roughness": 0.7,
+        "alpha_clip": true
+      },
+      "textures": {
+        "alpha": "textures/Eyelashes_L_SlightCurl_Coverage.png"
+      }
+    },
+    {
+      "material_name": "ada_facemesh_head_LOD2_shader_shader",
+      "mesh": "Ada_FaceMesh_LOD0",
+      "slot_index": 11,
+      "material_source": "/Game/MetaHumans/Ada/Face/Materials/Baked/MI_HeadSynthesized_Baked_LOD2.MI_HeadSynthesized_Baked_LOD2",
+      "kind": "skin",
+      "face_slot": "head_skin",
+      "params": {
+        "roughness_bias": 0.0
+      },
+      "textures": {
+        "ao": "textures/FaceCavity_MAIN.png"
+      }
+    },
+    {
+      "material_name": "ada_facemesh_head_LOD3_shader_shader",
+      "mesh": "Ada_FaceMesh_LOD0",
+      "slot_index": 12,
+      "material_source": "/Game/MetaHumans/Ada/Face/Materials/Baked/MI_HeadSynthesized_Baked_LOD3.MI_HeadSynthesized_Baked_LOD3",
+      "kind": "skin",
+      "face_slot": "head_skin",
+      "params": {
+        "roughness_bias": 0.0
+      },
+      "textures": {
+        "ao": "textures/FaceCavity_MAIN.png"
+      }
+    },
+    {
+      "material_name": "ada_facemesh_head_LOD4_shader_shader",
+      "mesh": "Ada_FaceMesh_LOD0",
+      "slot_index": 13,
+      "material_source": "/Game/MetaHumans/Ada/Face/Materials/Baked/MI_HeadSynthesized_Baked_LOD4.MI_HeadSynthesized_Baked_LOD4",
+      "kind": "skin",
+      "face_slot": "head_skin",
+      "params": {
+        "roughness_bias": 0.0
+      },
+      "textures": {
+        "ao": "textures/FaceCavity_MAIN.png"
+      }
+    },
+    {
+      "material_name": "ada_facemesh_head_LOD57_shader_shader",
+      "mesh": "Ada_FaceMesh_LOD0",
+      "slot_index": 14,
+      "material_source": "/Game/MetaHumans/Ada/Face/Materials/Baked/MI_HeadSynthesized_Baked_LOD5.MI_HeadSynthesized_Baked_LOD5",
+      "kind": "skin",
+      "face_slot": "head_skin",
+      "params": {
+        "roughness_bias": 0.0
+      },
+      "textures": {
+        "ao": "textures/FaceCavity_MAIN.png"
+      }
+    },
+    {
+      "material_name": "f_med_nrw_top_shirt_nrm_cinematic_lambert1",
+      "mesh": "f_med_nrw_top_shirt_nrm_Cinematic_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Common/Materials/Shirt/Female/M_f_top_shirt.M_f_top_shirt",
+      "kind": "cloth",
+      "face_slot": null,
+      "params": {
+        "diffuse_color_1": [
+          0.0625,
+          0.0625,
+          0.0625,
+          1.0
+        ],
+        "diffuse_color_2": [
+          0.21875,
+          0.21875,
+          0.21875,
+          1.0
+        ],
+        "roughness": 0.30000001192092896,
+        "metallic": 0.0,
+        "ao_amount": 0.5,
+        "detail_tiling": 220.0,
+        "detail_strength": 1.0,
+        "macro_tiling": 3.0,
+        "macro_strength": 0.5,
+        "mask_channel": "r"
+      },
+      "textures": {
+        "detail_diffuse": "textures/micro_weave_denim_diffuse.png",
+        "detail_normal": "micro_pp_oxford_N",
+        "normal": "textures/f_top_shirt_N.png",
+        "mask": "textures/f_top_shirt_Mask.png",
+        "ao": "textures/f_top_shirt_AO.png"
+      }
+    },
+    {
+      "material_name": "f_med_nrw_btm_slacks_nrm_cinematic_lambert3",
+      "mesh": "f_med_nrw_btm_slacks_nrm_Cinematic_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Common/Materials/Slacks/M_btm_slacks.M_btm_slacks",
+      "kind": "cloth",
+      "face_slot": null,
+      "params": {
+        "diffuse_color_1": [
+          0.030937999486923218,
+          0.03125,
+          0.030966000631451607,
+          1.0
+        ],
+        "diffuse_color_2": [
+          0.06770800054073334,
+          0.06770800054073334,
+          0.06770800054073334,
+          0.0
+        ],
+        "roughness": 0.75,
+        "metallic": 0.0,
+        "ao_amount": 0.85,
+        "detail_tiling": 200.0,
+        "detail_strength": 0.5,
+        "macro_tiling": 3.0,
+        "macro_strength": 0.07000000029802322,
+        "mask_channel": "r"
+      },
+      "textures": {
+        "detail_normal": "micro_knit_front_N",
+        "macro_overlay": "textures/macro_heather_04_Vertical.png",
+        "normal": "textures/btm_slacks_N.png",
+        "mask": "textures/btm_slacks_Mask.png",
+        "ao": "textures/btm_slacks_AO.png"
+      }
+    },
+    {
+      "material_name": "f_med_nrw_body_MI_BodySynthesized",
+      "mesh": "f_med_nrw_body_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Ada/Materials/MI_BodySynthesized.MI_BodySynthesized",
+      "kind": "skin",
+      "face_slot": null,
+      "params": {
+        "roughness_bias": 0.0
+      },
+      "textures": {
+        "basecolor": "textures/BodyBaseColor.png",
+        "roughness": "textures/female_body_roughness_map.png",
+        "normal": "textures/female_body_normal_map.png",
+        "ao": "textures/female_body_cavity_map.png"
+      }
+    },
+    {
+      "material_name": "eyebrows_m_thin_cardsmesh_group0_lod0_lambert1",
+      "mesh": "Eyebrows_M_Thin_CardsMesh_Group0_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Ada/Materials/MI_Facial_Hair.MI_Facial_Hair",
+      "kind": "hair",
+      "face_slot": null,
+      "params": {
+        "base_color": [
+          0.02,
+          0.015,
+          0.01,
+          1.0
+        ],
+        "roughness": 0.6116719841957092,
+        "alpha_clip": true,
+        "alpha_channel": "r",
+        "alpha_stem": "Eyebrows_M_Thin_CardsAtlas_Attribute",
+        "ignore_gltf_map": true
+      },
+      "textures": {
+        "alpha_r": "textures/Eyebrows_M_Thin_CardsAtlas_Attribute.png"
+      }
+    },
+    {
+      "material_name": "hair_s_coil_cardsmesh_group0_lod0_Cards_M",
+      "mesh": "Hair_S_Coil_CardsMesh_Group0_LOD0",
+      "slot_index": 0,
+      "material_source": "/Game/MetaHumans/Ada/Materials/MI_Hair_Cards.MI_Hair_Cards",
+      "kind": "hair",
+      "face_slot": null,
+      "params": {
+        "base_color": [
+          0.03676007759276145,
+          0.02233288728523956,
+          0.012747583038163313,
+          1.0
+        ],
+        "roughness": 0.3199999928474426,
+        "alpha_clip": true,
+        "alpha_channel": "r",
+        "alpha_stem": "Hair_S_Coil_CardsAtlas_Attribute",
+        "ignore_gltf_map": true
+      },
+      "textures": {
+        "alpha_r": "textures/Hair_S_Coil_CardsAtlas_Attribute.png",
+        "alpha": "Hair_S_Coil_RootUVSeedCoverage"
+      }
+    },
+    {
+      "material_name": "hair_s_coil_cardsmesh_group0_lod0_lambert1",
+      "mesh": "Hair_S_Coil_CardsMesh_Group0_LOD0",
+      "slot_index": 1,
+      "material_source": "/Game/MetaHumans/Ada/Materials/MI_Hair_Cards.MI_Hair_Cards",
+      "kind": "hair",
+      "face_slot": null,
+      "params": {
+        "base_color": [
+          0.03676007759276145,
+          0.02233288728523956,
+          0.012747583038163313,
+          1.0
+        ],
+        "roughness": 0.3199999928474426,
+        "alpha_clip": true,
+        "alpha_channel": "r",
+        "alpha_stem": "Hair_S_Coil_CardsAtlas_Attribute",
+        "ignore_gltf_map": true
+      },
+      "textures": {
+        "alpha_r": "textures/Hair_S_Coil_CardsAtlas_Attribute.png",
+        "alpha": "Hair_S_Coil_RootUVSeedCoverage"
+      }
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{character_id}} — MetaHuman viewer</title>
+  <link rel="stylesheet" href="../../assets/style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body class="viewer">
+  <header>
+    <a class="back" href="../../index.html">&larr; gallery</a>
+    <h1>{{character_id}}</h1>
+  </header>
+
+  <div id="stage" class="stage"></div>
+
+  <footer>
+    <span>{{tri_count}} tris</span>
+    <span>&middot;</span>
+    <span>{{file_size_mb}} MiB</span>
+    <span>&middot;</span>
+    <span>built {{built_at}}</span>
+  </footer>
+
+  <script type="module">
+    import { mount } from '../../assets/viewer.js?v={{cache_bust}}';
+    mount(document.getElementById('stage'), {
+      glbUrl: '{{glb_file}}',
+      mappingUrl: 'mh_materials.json',
+      autoRotate: false,
+      interactive: true,
+    }).then((v) => { window.__viewer = v; }).catch((err) => {
+      console.error('[viewer] mount failed', err);
+      document.getElementById('stage').innerHTML =
+        '<pre style="color:#f88;padding:16px">' + (err && err.message || err) + '</pre>';
+    });
+  </script>
+</body>
+</html>
