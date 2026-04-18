@@ -22,7 +22,7 @@ the stage's contract, runs the launcher, and updates a per-character manifest.
 This is a **fun weekend project**. Only tested with **Ada** from the
 MetaHuman demo. The fundamentals are in place, but a lot of render quality
 and automation work is still on the table (see [Known gaps](#known-gaps)
-below, and the open issues).
+below, and the open issues). Tested running in Safari on iPhone X.
 
 The pipeline is designed to run with **Claude Haiku** as the per-stage
 executor (Opus designs the contracts, Haiku runs them). Interesting if
