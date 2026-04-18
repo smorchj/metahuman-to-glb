@@ -162,20 +162,30 @@ def _flip_normal_maps_g() -> int:
     return touched
 
 
+def _per_image_cap(name: str, default_cap: int) -> int:
+    """Per-texture cap override. Teeth atlas covers ~2% of screen and includes
+    the tongue pack — 256px is plenty there."""
+    n = name.lower()
+    if n.startswith("t_teeth"):
+        return 256
+    return default_cap
+
+
 def _downsample_images(max_px: int) -> int:
-    """Scale any image texture whose max side > max_px down to max_px (preserving aspect)."""
+    """Scale any image texture whose max side > its cap down to the cap (preserving aspect)."""
     touched = 0
     for img in bpy.data.images:
         if img.size[0] == 0 or img.size[1] == 0:
             continue  # unloaded / generated
         w, h = img.size[0], img.size[1]
         biggest = max(w, h)
-        if biggest <= max_px:
+        cap = _per_image_cap(img.name, max_px)
+        if biggest <= cap:
             continue
-        factor = max_px / biggest
+        factor = cap / biggest
         new_w = max(1, int(w * factor))
         new_h = max(1, int(h * factor))
-        print(f"[stage03] downsample {img.name}: {w}x{h} -> {new_w}x{new_h}", flush=True)
+        print(f"[stage03] downsample {img.name}: {w}x{h} -> {new_w}x{new_h} (cap={cap})", flush=True)
         img.scale(new_w, new_h)
         touched += 1
     return touched

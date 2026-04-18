@@ -22,14 +22,14 @@
     "03_glb_export": {
       "status": "done",
       "started_at": "2026-04-18T14:45:14Z",
-      "completed_at": "2026-04-18T20:39:13Z",
+      "completed_at": "2026-04-18T20:51:07Z",
       "output_dir": "03-glb/",
       "errors": []
     },
     "04_webview_build": {
       "status": "done",
       "started_at": "2026-04-18T14:45:37Z",
-      "completed_at": "2026-04-18T20:39:18Z",
+      "completed_at": "2026-04-18T20:51:08Z",
       "output_dir": "../../docs/characters/",
       "errors": []
     }
