@@ -1,5 +1,17 @@
 # MetaHuman → GLB
 
+<p align="center">
+  <a href="https://smorchj.github.io/metahuman-to-glb/">
+    <img src="assets/hero.png" alt="Ada — MetaHuman rendered in the three.js gallery" width="80%" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://smorchj.github.io/metahuman-to-glb/">
+    <img src="https://img.shields.io/badge/LIVE%20DEMO-metahuman--to--glb-06B6D4?style=for-the-badge&labelColor=0a0420&logo=github&logoColor=white" alt="live demo" />
+  </a>
+</p>
+
 Deterministic four-stage pipeline that turns an Unreal MetaHuman into a
 web-ready, Draco-compressed GLB and publishes it as a browsable three.js
 viewer on GitHub Pages.
@@ -19,10 +31,11 @@ the stage's contract, runs the launcher, and updates a per-character manifest.
 
 ## Status
 
-This is a **fun weekend project**. Only tested with **Ada** from the
-MetaHuman demo. The fundamentals are in place, but a lot of render quality
-and automation work is still on the table (see [Known gaps](#known-gaps)
-below, and the open issues). Tested running in Safari on iPhone X.
+This is a **fun weekend project**. Currently running against **Ada** and
+**Taro** from the MetaHuman demo set — both are in the live gallery. The
+fundamentals are in place, but a lot of render quality and automation work
+is still on the table (see [Known gaps](#known-gaps) below, and the open
+issues). Tested running in Safari on iPhone X.
 
 The pipeline is designed to run with **Claude Haiku** as the per-stage
 executor (Opus designs the contracts, Haiku runs them). Interesting if
@@ -30,21 +43,37 @@ someone wants to try adapting it to a small local model — the stage
 boundaries keep context small enough that a weak model should be able to
 execute each step.
 
+The viewer has a live look-dev panel for hair tuning — append `?tune=1`
+to any character page (e.g. `.../characters/ada/?tune=1`) to get sliders
+for roughness floor, root darkening, seed variance, anisotropy strength
+and rotation. Dialled-in values paste straight into a per-character
+override table in the viewer.
+
 ## Known gaps
 
 - **Eye shader is bare-minimum.** Iris / limbus / pupil / sclera-vein math
   works ish, but refraction, caustics, and sub-surface on the caruncle are
-  faked or hidden. Iris and pupil size seems slightly off now as well. 
-- **Hair shader is weak.** Currently a built-in alphaHash against the
-  compact-atlas R channel, MI-synthesised base colour, right now scalp is showing clearly through,
-  no anisotropy, no root darkening, no tip translucency.
+  faked or hidden. Iris and pupil size seem slightly off
+  ([#5](https://github.com/smorchj/metahuman-to-glb/issues/5)).
+- **Hair color curve is too bright.** Two-pass hair, anisotropic spec via
+  `_CardsAtlas_Tangent`, root darkening and per-strand seed variance are
+  all wired now, but the `hairMelanin` → RGB curve in the MI-synth
+  basecolor is lifted — Taro's hair reads too blonde vs the UE reference.
+  Tip translucency also still missing
+  ([#13](https://github.com/smorchj/metahuman-to-glb/issues/13)).
+- **Clothing picks the wrong base colour.** Mask-blended
+  `diffuse_color_1/2` aren't wired through correctly — garments render
+  flat instead of showing the secondary tone in masked regions
+  ([#12](https://github.com/smorchj/metahuman-to-glb/issues/12)).
 - **Some MH material maps are skipped** because the Unreal node graphs
   are too complex to round-trip through Blender's Principled BSDF + glTF.
   A generic system for reconstructing UE material graphs automatically
-  (instead of per-MI hard-coding) is a prerequisite for full automation.
-- **Brow and lash colour are hardcoded.** The MI synth produces auburn
-  brows (driven by `hairRedness`) so I hardcoded it to be dark brown.
-  Brow color should be fixed properly.
+  (instead of per-MI hard-coding) is a prerequisite for full automation
+  ([#7](https://github.com/smorchj/metahuman-to-glb/issues/7)).
+- **Brow colour is hardcoded.** The MI synth produces auburn brows
+  (driven by `hairRedness`) so it's pinned to dark brown. Should be
+  derived properly from the scalp hair color
+  ([#8](https://github.com/smorchj/metahuman-to-glb/issues/8)).
 
 ## Contributing
 
