@@ -433,23 +433,63 @@ function applyHair(mat, p, t, loadTex) {
   mat.depthWrite = false;
   mat.side = THREE.DoubleSide;
 
-  const chan = (p.alpha_channel || 'r').toLowerCase();
-  const swizzle = ({ r: 'r', g: 'g', b: 'b', a: 'a' }[chan]) || 'r';
+  const alphaChan = (p.alpha_channel || 'r').toLowerCase();
+  const alphaSwz  = ({ r: 'r', g: 'g', b: 'b', a: 'a' }[alphaChan]) || 'r';
+
+  // MH hair atlases pack three data channels beyond coverage:
+  //   _CardsAtlas_Attribute (compact, 5.6): R=coverage, G=root→tip, B=seed
+  //   _RootUVSeedCoverage   (legacy):       R=root→tip, G=uv.v,  B=seed, A=coverage
+  // Derive root + seed channels from which channel is alpha.
+  // alpha=R  → atlas is compact          → root=G, seed=B
+  // alpha=A  → atlas is legacy           → root=R, seed=B
+  const rootChan = alphaChan === 'a' ? 'r' : 'g';
+  const seedChan = 'b';
+  const rootDark = typeof p.root_darkening === 'number' ? p.root_darkening : 0.35;
+  const seedAmp  = typeof p.seed_variation === 'number' ? p.seed_variation : 0.25;
 
   uniqueCacheKey(mat);
   mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uHairRootDark = { value: rootDark };
+    shader.uniforms.uHairSeedAmp  = { value: seedAmp  };
+
+    // Sample the atlas once at the top of the fragment main and derive the
+    // hair-lookup values we'll reuse in both color and alpha replacements.
+    shader.fragmentShader = `
+      uniform float uHairRootDark;
+      uniform float uHairSeedAmp;
+    ` + shader.fragmentShader;
+
+    // Modulate diffuseColor with root→tip darkening + per-strand tint
+    // variance. Runs after the normal map_fragment (which already applied
+    // the flat base color).
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <map_fragment>',
+      `
+      #include <map_fragment>
+      #ifdef USE_ALPHAMAP
+        vec4 hairAtlas = texture2D( alphaMap, vAlphaMapUv );
+        float rootT = hairAtlas.${rootChan};        // 0 at root, 1 at tip
+        float seed  = hairAtlas.${seedChan};        // per-strand random
+        float toneMul   = mix( uHairRootDark, 1.0, rootT );
+        float strandMul = 1.0 + (seed - 0.5) * 2.0 * uHairSeedAmp;
+        diffuseColor.rgb *= toneMul * strandMul;
+      #endif
+      `
+    );
+
     // Replace the default alphaMap sampler (which uses .g) with the declared
     // channel so MH compact-atlas R gets picked up, not the dense G gradient.
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <alphamap_fragment>',
       `
       #ifdef USE_ALPHAMAP
-        diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).${swizzle};
+        diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).${alphaSwz};
       #endif
       `
     );
   };
-  console.log('[viewer][hair]', mat.name, '→ outer alpha-blend R-channel, atlas=' + atlasUrl);
+  console.log('[viewer][hair]', mat.name,
+              `→ alpha=${alphaChan}, root=${rootChan}, seed=${seedChan}, atlas=${atlasUrl}`);
 }
 
 // Build the inner opaque-alpha-clip sibling for a hair mesh.
@@ -459,8 +499,12 @@ function addHairInnerPass(mesh, outerMat, spec) {
   if (!outerMat?.alphaMap) return;         // nothing to clip against
   if (Array.isArray(mesh.material)) return; // multi-slot hair meshes: skip for now
   const p = spec.params || {};
-  const chan = (p.alpha_channel || 'r').toLowerCase();
-  const swizzle = ({ r: 'r', g: 'g', b: 'b', a: 'a' }[chan]) || 'r';
+  const alphaChan = (p.alpha_channel || 'r').toLowerCase();
+  const alphaSwz  = ({ r: 'r', g: 'g', b: 'b', a: 'a' }[alphaChan]) || 'r';
+  const rootChan = alphaChan === 'a' ? 'r' : 'g';
+  const seedChan = 'b';
+  const rootDark = typeof p.root_darkening === 'number' ? p.root_darkening : 0.35;
+  const seedAmp  = typeof p.seed_variation === 'number' ? p.seed_variation : 0.25;
   const threshold = typeof p.inner_alpha_threshold === 'number'
                     ? p.inner_alpha_threshold : 0.5;
 
@@ -475,11 +519,31 @@ function addHairInnerPass(mesh, outerMat, spec) {
 
   uniqueCacheKey(innerMat);
   innerMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uHairRootDark = { value: rootDark };
+    shader.uniforms.uHairSeedAmp  = { value: seedAmp  };
+    shader.fragmentShader = `
+      uniform float uHairRootDark;
+      uniform float uHairSeedAmp;
+    ` + shader.fragmentShader;
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <map_fragment>',
+      `
+      #include <map_fragment>
+      #ifdef USE_ALPHAMAP
+        vec4 hairAtlas = texture2D( alphaMap, vAlphaMapUv );
+        float rootT = hairAtlas.${rootChan};
+        float seed  = hairAtlas.${seedChan};
+        float toneMul   = mix( uHairRootDark, 1.0, rootT );
+        float strandMul = 1.0 + (seed - 0.5) * 2.0 * uHairSeedAmp;
+        diffuseColor.rgb *= toneMul * strandMul;
+      #endif
+      `
+    );
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <alphamap_fragment>',
       `
       #ifdef USE_ALPHAMAP
-        diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).${swizzle};
+        diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).${alphaSwz};
       #endif
       `
     );
@@ -676,12 +740,16 @@ function applyEyelashes(mat, p, t, loadTex) {
   }
 
   // Eyelash coverage PNGs are grayscale (R=G=B=A). Default alphaMap .g works.
+  // Regular alpha blend (not alphaHash) for smooth edges — tested against MH
+  // compact lashes where the dithered hash look was very visible. depthWrite
+  // off so lashes blend over eyes cleanly; no sorting issues in practice
+  // because lashes are the closest surface to the camera around the eye.
   mat.alphaMap = alpha;
-  mat.alphaHash = true;
-  mat.transparent = false;
+  mat.alphaHash = false;
+  mat.transparent = true;
   mat.alphaTest = 0.0;
-  mat.depthWrite = true;
-  console.log('[viewer][lash]', mat.name, '→ alphaHash .g, coverage=' + t.alpha);
+  mat.depthWrite = false;
+  console.log('[viewer][lash]', mat.name, '→ alpha-blend .g, coverage=' + t.alpha);
 }
 
 // ---------------- face accessory (teeth / saliva / eyeshell / eyeEdge / cartilage)
