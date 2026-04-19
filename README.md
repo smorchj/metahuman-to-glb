@@ -42,7 +42,7 @@ the whole repo, just the current stage plus the current character.
 
 <p align="center">
   <a href="https://smorchj.github.io/metahuman-to-glb/icm-agent-flow.html">
-    <img src="assets/icm-agent-flow.gif" alt="ICM agent flow — animated walkthrough of the context layers" width="90%" />
+    <img src="assets/icm-agent-flow.gif?v=2" alt="ICM agent flow — animated walkthrough of the context layers" width="90%" />
   </a>
 </p>
 
