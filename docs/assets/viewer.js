@@ -1037,6 +1037,12 @@ function applyFaceAccessory(mat, spec, p, t, loadTex) {
     mat.opacity = 0.4;
     mat.roughness = 0.8;
     mat.depthWrite = false;
+    // Force single-sided. glTF imports default this mesh as DoubleSide, which
+    // causes visible darkening when the upper lid folds back on itself during
+    // a blink — the folded region renders twice (front + back face), doubling
+    // the alpha and producing a horizontal dark streak at half-close. With
+    // FrontSide the folded backfaces are culled and the fold is invisible.
+    mat.side = THREE.FrontSide;
   }
   if (slot === 'cartilage') {
     mat.roughness = 0.6;
