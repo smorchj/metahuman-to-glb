@@ -1032,28 +1032,17 @@ function applyFaceAccessory(mat, spec, p, t, loadTex) {
 
   if (slot === 'eye_occlusion') {
     // Dark ring under the lid that sells socket depth.
-    //
-    // Blink fold fix: the MH occlusion skirt folds onto itself mid-blink so
-    // two front-facing layers of the same material cover the same pixels.
-    // Standard alpha blend (0.4 × 0.4 → 0.64) makes the overlap visibly
-    // darker — a horizontal streak at half-close. FrontSide alone doesn't
-    // help (both layers are front-facing). alphaHash kills it but dithers.
-    //
-    // Idempotent fix: CustomBlending with MinEquation outputs min(src, dst)
-    // per channel. src is a fixed dark "socket target" color; dst is the
-    // skin underneath. First layer darkens skin toward target. Second
-    // layer's min(target, target) = target — no further change. Overlap-
-    // proof without dithering.
-    mat.color.setRGB(0.22, 0.14, 0.09);
+    mat.color.setRGB(0.02, 0.015, 0.01);
+    mat.transparent = true;
+    mat.opacity = 0.4;
     mat.roughness = 0.8;
     mat.side = THREE.FrontSide;
-    mat.transparent = true;
-    mat.opacity = 1.0;
-    mat.depthWrite = false;
-    mat.blending = THREE.CustomBlending;
-    mat.blendEquation = THREE.MinEquation;
-    mat.blendSrc = THREE.OneFactor;
-    mat.blendDst = THREE.OneFactor;
+    // Blink fold fix: the MH occlusion skirt has upper and lower portions
+    // that pass through each other's screen-space regions mid-blink. With
+    // depthWrite = true, the frontmost fragment writes depth first and the
+    // farther overlapping fragment fails the depth test — no alpha
+    // compounding, same soft blend when there's no overlap.
+    mat.depthWrite = true;
   }
   if (slot === 'cartilage') {
     mat.roughness = 0.6;
