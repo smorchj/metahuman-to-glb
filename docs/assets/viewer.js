@@ -286,7 +286,6 @@ function patchMaterials(root, mapping, baseUrl) {
   // outer translucent alpha-blend). Collect candidates in the traverse and
   // clone them after, so we don't mutate the scene graph while walking it.
   const hairTwoPass = [];
-  const eyeOccPrepass = [];
   root.traverse((obj) => {
     if (!obj.isMesh) return;
     const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -325,9 +324,6 @@ function patchMaterials(root, mapping, baseUrl) {
       if (spec.kind === 'skin') {
         applySkin(patched || workMat);
       }
-      if (spec.face_slot === 'eye_occlusion') {
-        eyeOccPrepass.push({ mesh: obj, slot: i, colorMat: patched || workMat });
-      }
     });
   });
   const hairMats = [];
@@ -336,12 +332,8 @@ function patchMaterials(root, mapping, baseUrl) {
     const innerMat = addHairInnerPass(mesh, outerMat, spec);
     if (innerMat) hairMats.push(innerMat);
   }
-  for (const { mesh, slot, colorMat } of eyeOccPrepass) {
-    addEyeOcclusionDepthPrepass(mesh, colorMat, slot);
-  }
   console.log('[viewer] patched', counts.matched, 'matched /', counts.skipped,
-              'skipped', counts.byKind, '/ hair two-pass:', hairTwoPass.length,
-              '/ eye-occ prepass:', eyeOccPrepass.length);
+              'skipped', counts.byKind, '/ hair two-pass:', hairTwoPass.length);
   return { hairMats };
 }
 
@@ -716,56 +708,6 @@ function addHairInnerPass(mesh, outerMat, spec) {
   return innerMat;
 }
 
-// ---------------- eye occlusion depth prepass
-//
-// The MH eye_occlusion mesh ("eyeshell") folds onto itself during a blink —
-// the upper and lower halves of the skirt pass through each other's
-// screen-space region. Both halves are front-facing, so backface culling
-// doesn't help. three.js doesn't sort triangles within a single draw call,
-// so `depthWrite` alone can't guarantee the frontmost fragment wins.
-//
-// Two-pass fix: clone the mesh with a depth-only material that renders
-// first. It writes the closest depth at every pixel regardless of triangle
-// submission order. The color mesh then uses depthFunc=Equal so only the
-// fragment matching the prepass depth shades — no compounding streak.
-
-function addEyeOcclusionDepthPrepass(mesh, colorMat, slotIndex) {
-  const depthMat = new THREE.MeshBasicMaterial({
-    colorWrite: false,
-    depthWrite: true,
-    depthTest: true,
-    depthFunc: THREE.LessDepth,
-    side: THREE.FrontSide,
-    transparent: false,
-  });
-  depthMat.name = (colorMat.name || 'eye_occ') + '__depth';
-
-  // No-op material for the clone's other slots — the face mesh has ~15
-  // material slots drawn as separate groups, but we only want a depth
-  // prepass for the eye_occlusion slot. Other slots render invisibly (no
-  // color, no depth, early-out in blend).
-  const noopMat = new THREE.MeshBasicMaterial({
-    colorWrite: false,
-    depthWrite: false,
-    depthTest: false,
-    transparent: true,
-    opacity: 0,
-  });
-  noopMat.name = 'eyeocc_prepass_noop';
-
-  const pre = mesh.clone();  // shares BufferGeometry, copies skeleton bind
-  if (Array.isArray(mesh.material)) {
-    pre.material = mesh.material.map((_, idx) => idx === slotIndex ? depthMat : noopMat);
-  } else {
-    pre.material = depthMat;
-  }
-  pre.name = mesh.name + '__depthprepass';
-  pre.renderOrder = (mesh.renderOrder || 0) - 1;
-  mesh.parent?.add(pre);
-  console.log('[viewer][eyeocc] +depth prepass for', mesh.name, 'slot', slotIndex);
-  return depthMat;
-}
-
 // ---------------- hair tuning panel
 
 function buildHairTunePanel(container, hairMats) {
@@ -1094,20 +1036,7 @@ function applyFaceAccessory(mat, spec, p, t, loadTex) {
     mat.transparent = true;
     mat.opacity = 0.4;
     mat.roughness = 0.8;
-    mat.side = THREE.FrontSide;
-    // Blink fold fix: paired with a depth-only prepass clone of this mesh
-    // (see addEyeOcclusionDepthPrepass). The prepass establishes the
-    // closest-fragment depth at every pixel regardless of triangle submission
-    // order, then this color pass only shades fragments at that exact depth
-    // (depthFunc = Equal, depthWrite = false). Farther overlapping fragments
-    // — the other side of the folded occlusion skirt — fail depth-equal and
-    // get rejected. Result: one layer of alpha blend per pixel, no
-    // compounding streak mid-blink.
     mat.depthWrite = false;
-    mat.depthFunc = THREE.EqualDepth;
-    mat.polygonOffset = true;
-    mat.polygonOffsetFactor = -1;
-    mat.polygonOffsetUnits = -1;
   }
   if (slot === 'cartilage') {
     mat.roughness = 0.6;
