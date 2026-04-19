@@ -1032,16 +1032,28 @@ function applyFaceAccessory(mat, spec, p, t, loadTex) {
 
   if (slot === 'eye_occlusion') {
     // Dark ring under the lid that sells socket depth.
-    mat.color.setRGB(0.02, 0.015, 0.01);
-    mat.transparent = true;
-    mat.opacity = 0.4;
+    //
+    // Blink fold fix: the MH occlusion skirt folds onto itself mid-blink so
+    // two front-facing layers of the same material cover the same pixels.
+    // Standard alpha blend (0.4 × 0.4 → 0.64) makes the overlap visibly
+    // darker — a horizontal streak at half-close. FrontSide alone doesn't
+    // help (both layers are front-facing). alphaHash kills it but dithers.
+    //
+    // Idempotent fix: CustomBlending with MinEquation outputs min(src, dst)
+    // per channel. src is a fixed dark "socket target" color; dst is the
+    // skin underneath. First layer darkens skin toward target. Second
+    // layer's min(target, target) = target — no further change. Overlap-
+    // proof without dithering.
+    mat.color.setRGB(0.22, 0.14, 0.09);
     mat.roughness = 0.8;
-    mat.depthWrite = false;
-    // Force single-sided. glTF imports default this mesh as DoubleSide, which
-    // can cause visible darkening when the upper lid folds back on itself
-    // during a blink — the folded region renders twice (front + back face),
-    // doubling the alpha. With FrontSide the folded backfaces are culled.
     mat.side = THREE.FrontSide;
+    mat.transparent = true;
+    mat.opacity = 1.0;
+    mat.depthWrite = false;
+    mat.blending = THREE.CustomBlending;
+    mat.blendEquation = THREE.MinEquation;
+    mat.blendSrc = THREE.OneFactor;
+    mat.blendDst = THREE.OneFactor;
   }
   if (slot === 'cartilage') {
     mat.roughness = 0.6;
