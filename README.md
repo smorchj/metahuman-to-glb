@@ -29,6 +29,30 @@ the stage's contract, runs the launcher, and updates a per-character manifest.
 **https://smorchj.github.io/metahuman-to-glb/** — gallery built from
 `docs/` on every push to `main`.
 
+## How it works — ICM context layers
+
+The orchestration follows the **Interpretable Context Methodology**: the
+workspace is sliced into numbered folders, each with its own
+`CONTEXT.md` contract declaring exactly which inputs it reads and which
+outputs it writes. An Opus-class model authors those contracts once;
+Haiku then walks the per-character manifest one stage at a time, loading
+only the files a stage's Inputs table names. That's why the whole
+pipeline fits inside a weak model's context window — Haiku never sees
+the whole repo, just the current stage plus the current character.
+
+<p align="center">
+  <a href="https://smorchj.github.io/metahuman-to-glb/icm-agent-flow.html">
+    <img src="https://img.shields.io/badge/AGENT%20FLOW%20ANIMATION-watch%20how%20the%20context%20layers%20route-C084FC?style=for-the-badge&labelColor=0a0420" alt="agent flow animation" />
+  </a>
+</p>
+
+The animation on that page walks through the five context layers
+(Layer 0 agent orientation → Layer 1 task routing → Layer 2 stage
+contract → Layer 3 shared references → Layer 4 per-character state) and
+shows which layers each spawned agent actually loads. That hierarchy is
+the load-bearing piece — if every stage pulled the whole repo, a cheap
+model would fail; if it only pulls its declared Inputs, it succeeds.
+
 ## Status
 
 This is a **fun weekend project**. Currently running against **Ada** and
