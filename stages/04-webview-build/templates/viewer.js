@@ -1299,11 +1299,304 @@ function buildBlendshapePanel(container, morphMeshes) {
   liveBtn.title = 'Drive blendshapes from your webcam (MediaPipe FaceLandmarker). Requires camera permission.';
   liveBtn.style.cssText = 'flex:1;padding:4px 8px;background:#2a2f3a;color:#e8e8e8;border:1px solid #3a4050;border-radius:4px;cursor:pointer;font:inherit';
   resetRow.appendChild(liveBtn);
+
+  const recBtn = document.createElement('button');
+  recBtn.textContent = '● rec demo';
+  recBtn.title = 'Record the 3D viewer (video + mic) to a file (press R)';
+  recBtn.style.cssText = 'flex:1;padding:4px 8px;background:#2a2f3a;color:#e8e8e8;border:1px solid #3a4050;border-radius:4px;cursor:pointer;font:inherit';
+  resetRow.appendChild(recBtn);
+
+  const calibBtn = document.createElement('button');
+  calibBtn.textContent = '● calibrate';
+  calibBtn.title = 'Guided calibration: follow 14 expression prompts (~45s) to tune the viewer to your face';
+  calibBtn.style.cssText = 'flex:1;padding:4px 8px;background:#2a2f3a;color:#e8e8e8;border:1px solid #3a4050;border-radius:4px;cursor:pointer;font:inherit';
+  resetRow.appendChild(calibBtn);
+
   body.appendChild(resetRow);
 
   const statusEl = document.createElement('div');
   statusEl.style.cssText = 'font-size:10px;color:#89a;margin:0 0 4px;min-height:12px';
   body.appendChild(statusEl);
+
+  // ---- canvas-video + webcam-PiP + mic-audio recorder ----
+  // Composes the three.js canvas with the MediaPipe face-capture webcam (if
+  // live capture is running) into an off-screen compositor canvas, then
+  // captureStream's that, merged with mic audio. Prefers MP4 (H.264+AAC);
+  // falls back to WebM (VP9/VP8 + Opus) on browsers without mp4 encode.
+  (function () {
+    const FPS = 30;
+    let micStream = null, canvasStream = null, combined = null;
+    let recorder = null, chunks = [], startedAt = 0, tickId = 0;
+    // Compositor state — present only while recording if webcam PiP exists.
+    let compositor = null, compositorCtx = null, composeRafId = 0;
+    const pickMime = () => {
+      const cands = [
+        'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+        'video/mp4;codecs=avc1,mp4a',
+        'video/mp4',
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm',
+      ];
+      for (const m of cands) if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
+      return '';
+    };
+    const fmt = (ms) => {
+      const s = Math.floor(ms / 1000);
+      return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+    };
+    const setIdle = () => {
+      recBtn.textContent = '● rec demo';
+      recBtn.style.background = '#2a2f3a';
+      recBtn.style.color = '#e8e8e8';
+      recBtn.style.borderColor = '#3a4050';
+    };
+    const setRec = () => {
+      recBtn.style.background = '#5a1e28';
+      recBtn.style.color = '#ffd6de';
+      recBtn.style.borderColor = '#ff5a7a';
+    };
+    const cleanupStreams = () => {
+      if (composeRafId) { cancelAnimationFrame(composeRafId); composeRafId = 0; }
+      try { micStream?.getTracks().forEach((t) => t.stop()); } catch (_) {}
+      try { canvasStream?.getTracks().forEach((t) => t.stop()); } catch (_) {}
+      micStream = null; canvasStream = null; combined = null;
+      compositor = null; compositorCtx = null;
+    };
+    const start = async () => {
+      // Grab the three.js canvas. Only DOM canvas in the page (the alpha-map
+      // canvas from _eyeOcclusionAlphaMap is detached).
+      const canvas = document.querySelector('canvas');
+      if (!canvas || typeof canvas.captureStream !== 'function') {
+        statusEl.textContent = 'canvas.captureStream unavailable in this browser';
+        return;
+      }
+      // Webcam PiP element (added by startLiveCapture). If present + ready,
+      // composite it onto an off-screen canvas in a RAF loop and record that.
+      const webcam = document.querySelector('video');
+      const useComposite = !!(webcam && webcam.readyState >= 2 && webcam.videoWidth > 0);
+      try {
+        if (useComposite) {
+          compositor = document.createElement('canvas');
+          compositor.width = canvas.width;
+          compositor.height = canvas.height;
+          compositorCtx = compositor.getContext('2d');
+          const draw = () => {
+            if (!compositorCtx) return;
+            // 1) three.js canvas = background.
+            compositorCtx.drawImage(canvas, 0, 0, compositor.width, compositor.height);
+            // 2) webcam PiP bottom-right — match viewer CSS (180px wide,
+            // scaleX(-1) mirrored, 8px margin).
+            const W = compositor.width, H = compositor.height;
+            const pipW = Math.min(Math.round(W * 0.22), 360);
+            const ratio = webcam.videoWidth > 0 ? (webcam.videoHeight / webcam.videoWidth) : 0.75;
+            const pipH = Math.round(pipW * ratio);
+            const pad = Math.round(W * 0.012);
+            const x = W - pipW - pad;
+            const y = H - pipH - pad;
+            // Mirror the PiP horizontally (scaleX(-1) equivalent).
+            compositorCtx.save();
+            compositorCtx.translate(x + pipW, y);
+            compositorCtx.scale(-1, 1);
+            compositorCtx.drawImage(webcam, 0, 0, pipW, pipH);
+            compositorCtx.restore();
+            // Light border so the PiP reads against the bg.
+            compositorCtx.strokeStyle = 'rgba(255,255,255,0.35)';
+            compositorCtx.lineWidth = 2;
+            compositorCtx.strokeRect(x, y, pipW, pipH);
+            composeRafId = requestAnimationFrame(draw);
+          };
+          composeRafId = requestAnimationFrame(draw);
+          canvasStream = compositor.captureStream(FPS);
+        } else {
+          canvasStream = canvas.captureStream(FPS);
+        }
+      } catch (e) {
+        statusEl.textContent = 'capture canvas failed: ' + (e.message || e);
+        cleanupStreams();
+        return;
+      }
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+        });
+      } catch (e) {
+        // Audio is nice-to-have — recording video only is still useful.
+        micStream = null;
+        statusEl.textContent = 'mic denied, recording video only';
+      }
+      const tracks = [...canvasStream.getVideoTracks()];
+      if (micStream) tracks.push(...micStream.getAudioTracks());
+      combined = new MediaStream(tracks);
+      const mime = pickMime();
+      if (!mime) {
+        statusEl.textContent = 'no supported video codec in MediaRecorder';
+        cleanupStreams();
+        return;
+      }
+      try {
+        recorder = new MediaRecorder(combined, {
+          mimeType: mime,
+          videoBitsPerSecond: 5_000_000,  // 5 Mbps — sharp at 1080p-ish
+          audioBitsPerSecond: 128_000,
+        });
+      } catch (e) {
+        statusEl.textContent = 'recorder failed: ' + (e.message || e);
+        cleanupStreams();
+        return;
+      }
+      chunks = [];
+      recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size) chunks.push(ev.data); };
+      recorder.onstop = () => {
+        const usedMime = recorder.mimeType || mime;
+        const ext = usedMime.startsWith('video/mp4') ? 'mp4' : 'webm';
+        const blob = new Blob(chunks, { type: usedMime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        a.href = url;
+        a.download = `mh-demo-${ts}.${ext}`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        cleanupStreams();
+        recorder = null;
+        statusEl.textContent = ext === 'webm'
+          ? 'saved webm (browser lacks mp4 encoder); ffmpeg -i in.webm -c:v libx264 -c:a aac out.mp4'
+          : 'demo saved';
+        setIdle();
+      };
+      recorder.start(250);
+      startedAt = Date.now();
+      statusEl.textContent = 'rec 00:00';
+      tickId = setInterval(() => {
+        statusEl.textContent = 'rec ' + fmt(Date.now() - startedAt);
+      }, 250);
+      recBtn.textContent = '■ stop';
+      setRec();
+    };
+    const stop = () => {
+      clearInterval(tickId); tickId = 0;
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+    };
+    recBtn.addEventListener('click', () => {
+      if (recorder && recorder.state === 'recording') stop();
+      else start();
+    });
+    window.addEventListener('keydown', (e) => {
+      if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey &&
+          !['INPUT','TEXTAREA'].includes(document.activeElement?.tagName)) {
+        recBtn.click();
+      }
+    });
+    window.addEventListener('beforeunload', () => {
+      if (recorder && recorder.state === 'recording') recorder.stop();
+      cleanupStreams();
+    });
+  })();
+
+  // ---- guided calibration overlay + button wiring ----
+  calibBtn.addEventListener('click', async () => {
+    if (!capture || typeof capture.runCalibration !== 'function') {
+      statusEl.textContent = 'click ● live first to start tracking';
+      return;
+    }
+    // Build overlay.
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(10,4,32,0.92);color:#e8e8e8;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:system-ui,-apple-system,sans-serif;padding:40px;box-sizing:border-box';
+    const stepLabel = document.createElement('div');
+    stepLabel.style.cssText = 'font-size:14px;color:#888;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:16px';
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size:clamp(32px,6vw,64px);font-weight:700;text-align:center;letter-spacing:-0.02em;line-height:1.1;margin-bottom:20px;max-width:900px';
+    const subtitle = document.createElement('div');
+    subtitle.style.cssText = 'font-size:clamp(16px,2vw,22px);text-align:center;color:#a8b0c0;max-width:720px;line-height:1.5;margin-bottom:28px';
+    const counter = document.createElement('div');
+    counter.style.cssText = 'font-size:clamp(64px,10vw,120px);font-weight:200;color:#06B6D4;line-height:1;min-height:1em;margin:12px 0';
+    const progressBar = document.createElement('div');
+    progressBar.style.cssText = 'width:min(560px,80vw);height:6px;background:#1a1530;border-radius:3px;overflow:hidden;margin-top:16px';
+    const progressFill = document.createElement('div');
+    progressFill.style.cssText = 'height:100%;width:0;background:linear-gradient(90deg,#06B6D4,#818cf8);transition:width 60ms linear';
+    progressBar.appendChild(progressFill);
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel (Esc)';
+    cancelBtn.style.cssText = 'margin-top:36px;padding:10px 24px;background:transparent;color:#a8b0c0;border:1px solid #3a4050;border-radius:6px;cursor:pointer;font:inherit;font-size:14px';
+    overlay.append(stepLabel, title, subtitle, counter, progressBar, cancelBtn);
+    document.body.appendChild(overlay);
+
+    let cancelRequested = false;
+    const onCancel = () => { cancelRequested = true; };
+    cancelBtn.addEventListener('click', onCancel);
+    const keyHandler = (e) => { if (e.key === 'Escape') onCancel(); };
+    window.addEventListener('keydown', keyHandler);
+
+    const updateUi = (ev) => {
+      if (ev.phase === 'ready') {
+        stepLabel.textContent = `STEP ${ev.index + 1} / ${ev.total}  ·  GET READY`;
+        title.textContent = ev.step.prompt;
+        subtitle.textContent = ev.step.subtitle;
+        counter.textContent = String(ev.countdown);
+        counter.style.color = '#f59e0b';
+        progressFill.style.width = '0%';
+      } else if (ev.phase === 'record') {
+        stepLabel.textContent = `STEP ${ev.index + 1} / ${ev.total}  ·  HOLD`;
+        title.textContent = ev.step.prompt;
+        subtitle.textContent = ev.step.subtitle;
+        counter.textContent = '●';
+        counter.style.color = '#ef4444';
+        progressFill.style.width = `${Math.round(ev.progress * 100)}%`;
+      } else if (ev.phase === 'done' || ev.phase === 'cancelled') {
+        // handled after promise resolves
+      }
+    };
+
+    try {
+      const results = await capture.runCalibration({
+        steps: CALIBRATION_STEPS,
+        onStep: updateUi,
+        onCancelSignal: () => cancelRequested,
+      });
+      window.removeEventListener('keydown', keyHandler);
+      if (!results) {
+        overlay.remove();
+        statusEl.textContent = 'calibration cancelled';
+        return;
+      }
+      // Auto-tune and apply.
+      const overrides = autoTuneCalibration(results);
+      const overrideCount = overrides ? Object.keys(overrides).length : 0;
+      if (overrides && overrideCount > 0) {
+        Object.assign(CAPTURE_CALIBRATION, overrides);
+        saveUserCalibration(overrides);
+      }
+      // Trigger JSON download for dev/debug (so we can inspect).
+      const blob = new Blob([JSON.stringify({ ...results, overrides }, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.href = url; a.download = `mh-calibration-${ts}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+      // Replace overlay content with a "done" screen.
+      overlay.innerHTML = '';
+      const doneTitle = document.createElement('div');
+      doneTitle.textContent = 'Calibration complete';
+      doneTitle.style.cssText = 'font-size:clamp(32px,5vw,52px);font-weight:700;margin-bottom:16px;color:#10b981';
+      const doneSub = document.createElement('div');
+      doneSub.innerHTML = `Tuned <b>${overrideCount}</b> blendshape${overrideCount === 1 ? '' : 's'} to your face.<br/>The new settings are active now and saved to this browser.<br/>A JSON of the raw data also downloaded — send it over if you want it reviewed.`;
+      doneSub.style.cssText = 'font-size:18px;text-align:center;color:#a8b0c0;max-width:640px;line-height:1.6;margin-bottom:32px';
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = 'Close';
+      closeBtn.style.cssText = 'padding:12px 32px;background:#06B6D4;color:#0a0420;border:0;border-radius:6px;cursor:pointer;font:inherit;font-weight:600';
+      closeBtn.addEventListener('click', () => overlay.remove());
+      overlay.append(doneTitle, doneSub, closeBtn);
+      statusEl.textContent = `calibrated ${overrideCount} keys to your face`;
+    } catch (err) {
+      console.error('[calibration] failed', err);
+      overlay.remove();
+      window.removeEventListener('keydown', keyHandler);
+      statusEl.textContent = 'calibration failed: ' + (err?.message || err);
+    }
+  });
 
   const allSliders = [];
 
@@ -1426,7 +1719,11 @@ function buildBlendshapePanel(container, morphMeshes) {
 //                          so smiles actually read on the avatar.
 //   brow* / cheek* /     — under-report, need 2–3× gain so expressions read.
 //     noseSneer*
-// Applied as: clamp((score - bias) * gain, 0, 1)
+// Applied as: clamp((score - bias) * gain, 0, 1) ^ curve
+// `curve` defaults to 1 (linear). Values <1 (e.g. 0.6–0.8) boost the low
+// range AND soften the upper range — so subtle smiles read clearly without
+// mid-range inputs snapping straight to a max grin. Values >1 do the
+// opposite (compress low, amplify high) and are rarely useful here.
 // Tuned against a default iPhone front camera + neutral face at rest.
 const CAPTURE_CALIBRATION = {
   eyeBlinkLeft:       { bias: 0.45, gain: 2.0 },
@@ -1442,13 +1739,17 @@ const CAPTURE_CALIBRATION = {
   cheekSquintRight:   { bias: 0.00, gain: 1.8 },
   noseSneerLeft:      { bias: 0.05, gain: 2.0 },
   noseSneerRight:     { bias: 0.05, gain: 2.0 },
-  // Smile is the most under-reported ARKit key from MediaPipe — raw peaks
-  // around 0.3–0.5 on a real grin. Floor small noise, then aggressive gain.
-  mouthSmileLeft:     { bias: 0.05, gain: 2.8 },
-  mouthSmileRight:    { bias: 0.05, gain: 2.8 },
-  // Mouth corners pulling down — same under-reporting problem as smile.
-  mouthFrownLeft:     { bias: 0.05, gain: 2.2 },
-  mouthFrownRight:    { bias: 0.05, gain: 2.2 },
+  // Smile is under-reported by MediaPipe — peaks 0.2–0.35 for subtle/medium
+  // grins. Small bias so subtle smiles survive, moderate gain, and a
+  // curve <1 to boost the low end AND soften the upper end (gentle ramp
+  // instead of snap). Response:
+  //   raw 0.08 -> 0.26 (subtle visible), 0.15 -> 0.46, 0.25 -> 0.65,
+  //   raw 0.35 -> 0.84, 0.45 -> 1.00.
+  mouthSmileLeft:     { bias: 0.02, gain: 2.5, curve: 0.7 },
+  mouthSmileRight:    { bias: 0.02, gain: 2.5, curve: 0.7 },
+  // Mouth corners pulling down — same under-reporting, soft curve.
+  mouthFrownLeft:     { bias: 0.03, gain: 2.2, curve: 0.75 },
+  mouthFrownRight:    { bias: 0.03, gain: 2.2, curve: 0.75 },
   // Jaw open reads weakly too; moderate gain so talking is visible.
   jawOpen:            { bias: 0.05, gain: 1.5 },
 };
@@ -1456,9 +1757,108 @@ const CAPTURE_CALIBRATION = {
 function calibrateScore(name, raw) {
   const c = CAPTURE_CALIBRATION[name];
   if (!c) return raw;
-  const v = (raw - c.bias) * c.gain;
-  return v < 0 ? 0 : v > 1 ? 1 : v;
+  let v = (raw - c.bias) * c.gain;
+  if (v < 0) return 0;
+  if (v > 1) v = 1;
+  return c.curve ? Math.pow(v, c.curve) : v;
 }
+
+// ---- user-facing calibration script ----
+// Each step asks the user to hold a specific expression. We record raw
+// MediaPipe values + one webcam snapshot per step, then derive new
+// per-user CAPTURE_CALIBRATION params from the statistics.
+// Order matters: neutral first (establishes noise floor) then graded
+// expressions from subtle → extreme so peaks are captured cleanly.
+const CALIBRATION_STEPS = [
+  { id: 'neutral',     prompt: 'Relax your face',       subtitle: 'Look at the camera. Mouth closed but not pressed. No expression.', duration: 2400 },
+  { id: 'smile_small', prompt: 'Small smile',           subtitle: 'Just a hint — slight upturn at the corners of your mouth.', duration: 2200 },
+  { id: 'smile_med',   prompt: 'Normal smile',          subtitle: 'Your everyday smile — no teeth required.', duration: 2200 },
+  { id: 'smile_big',   prompt: 'Big smile',             subtitle: 'Show your teeth. A real grin, as wide as feels natural.', duration: 2200 },
+  { id: 'frown',       prompt: 'Frown',                 subtitle: 'Pull both corners of your mouth DOWN.', duration: 2200 },
+  { id: 'brow_up',     prompt: 'Raise both brows',      subtitle: 'A surprised look — eyebrows up, forehead wrinkled.', duration: 2200 },
+  { id: 'brow_down',   prompt: 'Lower both brows',      subtitle: 'Knit your brows — angry / concentrated expression.', duration: 2200 },
+  { id: 'squint',      prompt: 'Squint your eyes',      subtitle: 'Narrow both eyes about halfway, as if looking into bright light.', duration: 2200 },
+  { id: 'blink',       prompt: 'Close both eyes',       subtitle: 'Eyes fully closed — hold them shut.', duration: 2200 },
+  { id: 'jaw_open',    prompt: "Open mouth — 'aah'",    subtitle: 'Drop your jaw. Say a long "aaaah" out loud.', duration: 2400 },
+  { id: 'mouth_round', prompt: "Round lips — 'ooh'",    subtitle: 'Pucker your lips. Say a long "oooh".', duration: 2400 },
+  { id: 'mouth_wide',  prompt: "Wide lips — 'eee'",     subtitle: 'Pull your lips sideways into a long "eeee" sound.', duration: 2400 },
+  { id: 'cheek_puff',  prompt: 'Puff your cheeks',      subtitle: 'Close your mouth and blow your cheeks out like a balloon.', duration: 2200 },
+  { id: 'nose_sneer',  prompt: 'Wrinkle your nose',     subtitle: 'Scrunch your nose as if smelling something bad.', duration: 2200 },
+];
+
+// Which calibration step captures each blendshape's peak. Used by
+// autoTuneCalibration to pick the right max-reference for each key.
+// Keys not listed here get default linear gain = 1.
+const CALIBRATION_PEAK_MAP = {
+  eyeBlinkLeft:       'blink',    eyeBlinkRight:      'blink',
+  eyeSquintLeft:      'squint',   eyeSquintRight:     'squint',
+  browInnerUp:        'brow_up',
+  browOuterUpLeft:    'brow_up',  browOuterUpRight:   'brow_up',
+  browDownLeft:       'brow_down',browDownRight:      'brow_down',
+  cheekSquintLeft:    'smile_big',cheekSquintRight:   'smile_big',
+  cheekPuff:          'cheek_puff',
+  noseSneerLeft:      'nose_sneer', noseSneerRight:   'nose_sneer',
+  mouthSmileLeft:     'smile_big', mouthSmileRight:   'smile_big',
+  mouthFrownLeft:     'frown',     mouthFrownRight:   'frown',
+  mouthStretchLeft:   'mouth_wide',mouthStretchRight: 'mouth_wide',
+  mouthFunnel:        'mouth_round',
+  mouthPucker:        'mouth_round',
+  jawOpen:            'jaw_open',
+};
+
+// Derive CAPTURE_CALIBRATION overrides from a calibration result.
+// bias  = neutral.p95 + small margin (noise floor the expression must cross)
+// gain  = 1 / (peak.p95 - bias) so the user's genuine peak maps to 1.0
+// curve = 0.7 for mouth/brow (soft), 1.0 for eyes/jaw (linear)
+function autoTuneCalibration(calibrationResults) {
+  const stepsById = Object.create(null);
+  for (const s of calibrationResults.steps) stepsById[s.id] = s;
+  const neutral = stepsById.neutral;
+  if (!neutral) return null;
+  const overrides = {};
+  const softKeys = new Set([
+    'mouthSmileLeft','mouthSmileRight','mouthFrownLeft','mouthFrownRight',
+    'mouthStretchLeft','mouthStretchRight','mouthFunnel','mouthPucker',
+    'browInnerUp','browOuterUpLeft','browOuterUpRight','browDownLeft','browDownRight',
+    'cheekSquintLeft','cheekSquintRight','cheekPuff','noseSneerLeft','noseSneerRight',
+  ]);
+  for (const [name, peakStepId] of Object.entries(CALIBRATION_PEAK_MAP)) {
+    const neutralStats = neutral.raw?.[name];
+    const peakStats = stepsById[peakStepId]?.raw?.[name];
+    if (!neutralStats || !peakStats) continue;
+    const bias = Math.min(0.35, Math.max(0.0, neutralStats.p95 + 0.02));
+    const span = peakStats.p95 - bias;
+    if (span < 0.03) continue; // below detection noise — skip (keep default)
+    const gain = Math.min(10, Math.max(0.8, 1 / span));
+    const curve = softKeys.has(name) ? 0.7 : 1.0;
+    overrides[name] = { bias: +bias.toFixed(3), gain: +gain.toFixed(2), curve };
+  }
+  return overrides;
+}
+
+// Apply per-user calibration overrides on top of the hand-tuned defaults.
+// Persisted in localStorage under a versioned key so a future schema
+// change doesn't silently poison old sessions.
+const CALIBRATION_STORAGE_KEY = 'mh_viewer_user_calibration_v1';
+function loadUserCalibration() {
+  try {
+    const raw = localStorage.getItem(CALIBRATION_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (_) { return null; }
+}
+function saveUserCalibration(overrides) {
+  try { localStorage.setItem(CALIBRATION_STORAGE_KEY, JSON.stringify(overrides)); } catch (_) {}
+}
+function clearUserCalibration() {
+  try { localStorage.removeItem(CALIBRATION_STORAGE_KEY); } catch (_) {}
+}
+// At module load, fold any saved overrides into CAPTURE_CALIBRATION so
+// subsequent calibrateScore calls use them automatically.
+(function applyStoredCalibration() {
+  const stored = loadUserCalibration();
+  if (stored) Object.assign(CAPTURE_CALIBRATION, stored);
+})();
 
 const MEDIAPIPE_VERSION = '0.10.14';
 const MEDIAPIPE_BUNDLE  = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/vision_bundle.mjs`;
@@ -1480,11 +1880,26 @@ async function startLiveCapture({ container, morphMeshes, setInfluence, statusEl
     numFaces: 1,
     outputFaceBlendshapes: true,
     outputFacialTransformationMatrixes: false,
+    // Defaults are 0.5 — too high for micro-expressions. Lowering lets
+    // subtle mouth/brow/cheek motion survive MediaPipe's confidence gate
+    // instead of being zeroed out between "definite neutral" and "definite
+    // expression" states.
+    minFaceDetectionConfidence: 0.2,
+    minFacePresenceConfidence: 0.2,
+    minTrackingConfidence: 0.2,
   });
 
   statusEl.textContent = 'requesting camera…';
+  // 720p @ 60fps where the hardware allows — more pixels per face feature
+  // = finer landmark localization = subtler blendshapes. Browser will
+  // silently downgrade if the camera can't honor the request.
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+    video: {
+      facingMode: 'user',
+      width:     { ideal: 1280, min: 640 },
+      height:    { ideal: 720,  min: 480 },
+      frameRate: { ideal: 60,   min: 24 },
+    },
     audio: false,
   });
 
@@ -1511,7 +1926,75 @@ async function startLiveCapture({ container, morphMeshes, setInfluence, statusEl
   });
   await video.play();
 
-  statusEl.textContent = 'tracking';
+  const track = stream.getVideoTracks()[0];
+  const settings = track?.getSettings?.() || {};
+  const resLabel = (settings.width && settings.height)
+    ? `${settings.width}x${settings.height}@${settings.frameRate || '?'}fps`
+    : 'unknown res';
+  statusEl.textContent = `tracking (${resLabel})`;
+
+  // Expose a snapshot fn so the calibration overlay can grab a reference
+  // photo of the user's face at each target expression.
+  const captureWebcamSnapshot = () => {
+    const c = document.createElement('canvas');
+    const w = 320;
+    const h = Math.round(w * ((video.videoHeight || 3) / (video.videoWidth || 4)));
+    c.width = w;
+    c.height = h;
+    const cx = c.getContext('2d');
+    // Mirror like the PiP so the user recognises what they saw.
+    cx.translate(w, 0);
+    cx.scale(-1, 1);
+    cx.drawImage(video, 0, 0, w, h);
+    return c.toDataURL('image/jpeg', 0.72);
+  };
+
+  // ---------- audio viseme booster ----------
+  // MediaPipe's mouth blendshapes are chronically under-reactive. Mic audio
+  // has a much higher-fidelity signal for mouth openness and phonemes, so
+  // we sample it here and *boost* (via max()) the relevant visual
+  // blendshapes. Never suppresses — audio can only LIFT the visual value.
+  //
+  //   loud  (RMS)          → jawOpen
+  //   low band (100–500Hz) → mouthFunnel  (rounded vowels: oh/oo)
+  //   high band (2–5 kHz)  → mouthStretchL/R (fricatives: s, sh, f)
+  const audioEnv = { loud: 0, low: 0, high: 0 };
+  let audioCtx = null, analyser = null, audioStream = null, audioRafId = 0;
+  try {
+    audioStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false },
+    });
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = audioCtx.createMediaStreamSource(audioStream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.15;
+    src.connect(analyser);
+    const td = new Uint8Array(analyser.fftSize);
+    const fd = new Uint8Array(analyser.frequencyBinCount);
+    const bin = (hz) => Math.floor(hz / (audioCtx.sampleRate / 2) * analyser.frequencyBinCount);
+    const lowA = bin(100),  lowB = bin(500);
+    const hiA  = bin(2000), hiB  = bin(5000);
+    const upd = (cur, tgt) => cur + (tgt > cur ? 0.45 : 0.18) * (tgt - cur);
+    const pump = () => {
+      if (!analyser) return;
+      analyser.getByteTimeDomainData(td);
+      let sum = 0;
+      for (let i = 0; i < td.length; i++) { const v = (td[i] - 128) / 128; sum += v * v; }
+      const rms = Math.sqrt(sum / td.length);
+      analyser.getByteFrequencyData(fd);
+      let loSum = 0, loN = 0, hiSum = 0, hiN = 0;
+      for (let i = lowA; i <= lowB; i++) { loSum += fd[i]; loN++; }
+      for (let i = hiA;  i <= hiB;  i++) { hiSum += fd[i]; hiN++; }
+      audioEnv.loud = upd(audioEnv.loud, Math.min(1, rms * 6));
+      audioEnv.low  = upd(audioEnv.low,  Math.min(1, (loN ? loSum / loN / 255 : 0) * 2.5));
+      audioEnv.high = upd(audioEnv.high, Math.min(1, (hiN ? hiSum / hiN / 255 : 0) * 2.5));
+      audioRafId = requestAnimationFrame(pump);
+    };
+    audioRafId = requestAnimationFrame(pump);
+  } catch (e) {
+    statusEl.textContent = `tracking (${resLabel}, no mic — lipsync disabled)`;
+  }
 
   let running = true;
   let lastVideoTime = -1;
@@ -1528,12 +2011,36 @@ async function startLiveCapture({ container, morphMeshes, setInfluence, statusEl
       try {
         const res = landmarker.detectForVideo(video, performance.now());
         const bs = res?.faceBlendshapes?.[0]?.categories;
+        // Feed raw scores to calibration harvester if active (before
+        // calibrateScore so we capture MediaPipe's native output).
+        pushCalibrationFrame(bs);
         if (bs && bs.length > 0) {
           const seen = new Set();
+          const visualThisFrame = Object.create(null);
           for (const cat of bs) {
             if (cat.categoryName === '_neutral') continue;
-            setInfluence(cat.categoryName, calibrateScore(cat.categoryName, cat.score));
+            const v = calibrateScore(cat.categoryName, cat.score);
+            setInfluence(cat.categoryName, v);
+            visualThisFrame[cat.categoryName] = v;
             seen.add(cat.categoryName);
+          }
+          // Audio viseme boost: never suppresses — max(visual, audio*weight).
+          if (analyser) {
+            const boosts = [
+              ['jawOpen',           audioEnv.loud * 0.60],
+              ['mouthFunnel',       audioEnv.low  * 0.40],
+              ['mouthStretchLeft',  audioEnv.high * 0.30],
+              ['mouthStretchRight', audioEnv.high * 0.30],
+            ];
+            for (const [name, target] of boosts) {
+              const cur = visualThisFrame[name] || 0;
+              const merged = Math.max(cur, Math.min(1, target));
+              if (merged > cur) {
+                setInfluence(name, merged);
+                visualThisFrame[name] = merged;
+                seen.add(name);
+              }
+            }
           }
           // Zero any keys we set last frame but didn't see this frame.
           for (const prev of lastWritten) {
@@ -1556,15 +2063,117 @@ async function startLiveCapture({ container, morphMeshes, setInfluence, statusEl
   };
   rafId = requestAnimationFrame(loop);
 
+  // Calibration harvester — when active, push raw scores per frame into the
+  // active step's frame buffer. Main loop writes to this; runCalibration
+  // consumes and summarises at end of each step.
+  let calibrationActive = null; // { frames: [] } | null
+  const pushCalibrationFrame = (bs) => {
+    if (!calibrationActive || !bs) return;
+    const frame = Object.create(null);
+    for (const cat of bs) {
+      if (cat.categoryName === '_neutral') continue;
+      frame[cat.categoryName] = cat.score;
+    }
+    calibrationActive.frames.push(frame);
+  };
+
+  const runCalibration = async ({ steps, onStep, onCancelSignal }) => {
+    const results = {
+      timestamp: new Date().toISOString(),
+      videoResolution: resLabel,
+      userAgent: navigator.userAgent,
+      steps: [],
+    };
+    let cancelled = false;
+    const cancelPromise = new Promise((res) => {
+      const check = () => {
+        if (onCancelSignal?.()) { cancelled = true; res(); }
+        else setTimeout(check, 100);
+      };
+      check();
+    });
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+    const raceWithCancel = (p) => Promise.race([p, cancelPromise]);
+
+    for (let i = 0; i < steps.length; i++) {
+      if (cancelled) break;
+      const step = steps[i];
+      // Ready phase: 3, 2, 1 countdown so user has time to form expression.
+      for (let s = 3; s > 0; s--) {
+        if (cancelled) break;
+        onStep({ phase: 'ready', index: i, total: steps.length, step, countdown: s });
+        await raceWithCancel(sleep(900));
+      }
+      if (cancelled) break;
+      // Record phase: collect frames + grab snapshot halfway.
+      calibrationActive = { frames: [] };
+      const recordMs = step.duration || 2200;
+      const startMs = performance.now();
+      let snapshot = null;
+      while (performance.now() - startMs < recordMs && !cancelled) {
+        const elapsed = performance.now() - startMs;
+        const remaining = Math.max(0, recordMs - elapsed);
+        if (!snapshot && elapsed >= recordMs * 0.5) {
+          snapshot = captureWebcamSnapshot();
+        }
+        onStep({
+          phase: 'record', index: i, total: steps.length, step,
+          progress: elapsed / recordMs, remainingMs: remaining,
+        });
+        await raceWithCancel(sleep(60));
+      }
+      const frames = calibrationActive.frames;
+      calibrationActive = null;
+      if (!snapshot) snapshot = captureWebcamSnapshot();
+      results.steps.push({
+        id: step.id,
+        prompt: step.prompt,
+        subtitle: step.subtitle,
+        frameCount: frames.length,
+        durationMs: recordMs,
+        snapshot, // data URL
+        raw: summariseFrames(frames),
+      });
+    }
+    onStep({ phase: cancelled ? 'cancelled' : 'done', results });
+    return cancelled ? null : results;
+  };
+
+  // Median/p95 per blendshape across the collected frames of one step.
+  const summariseFrames = (frames) => {
+    if (!frames.length) return {};
+    const keys = new Set();
+    for (const f of frames) for (const k in f) keys.add(k);
+    const out = {};
+    for (const k of keys) {
+      const vals = frames.map((f) => f[k] || 0).sort((a, b) => a - b);
+      const n = vals.length;
+      const sum = vals.reduce((a, b) => a + b, 0);
+      out[k] = {
+        mean: +(sum / n).toFixed(4),
+        p50:  +vals[Math.floor(n * 0.5)].toFixed(4),
+        p95:  +vals[Math.min(n - 1, Math.floor(n * 0.95))].toFixed(4),
+        min:  +vals[0].toFixed(4),
+        max:  +vals[n - 1].toFixed(4),
+      };
+    }
+    return out;
+  };
+
   return {
     stop: () => {
       running = false;
       cancelAnimationFrame(rafId);
+      if (audioRafId) { cancelAnimationFrame(audioRafId); audioRafId = 0; }
       try { stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+      try { audioStream?.getTracks().forEach((t) => t.stop()); } catch (_) {}
+      try { audioCtx?.close(); } catch (_) {}
+      analyser = null; audioCtx = null; audioStream = null;
       try { landmarker.close(); } catch (_) {}
       video.remove();
       lastWritten.clear();
     },
+    runCalibration,
   };
 }
 
