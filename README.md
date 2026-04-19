@@ -55,12 +55,34 @@ override table in the viewer.
   works ish, but refraction, caustics, and sub-surface on the caruncle are
   faked or hidden. Iris and pupil size seem slightly off
   ([#5](https://github.com/smorchj/metahuman-to-glb/issues/5)).
+- **Eye occlusion has no alpha mask.** The eyeshell submesh renders as a
+  flat 40% dark layer across the *entire* eye — no texture fades it to
+  zero in the center. Consequences: slight whole-eye darkening when open,
+  and a visible horizontal streak mid-blink where the upper and lower
+  lid halves of the skirt overlap. Needs MH's eyeshell occlusion mask
+  exported from UE and wired as `alphaMap`
+  ([#19](https://github.com/smorchj/metahuman-to-glb/issues/19)).
+- **No scalp darkening under hair cards.** Hair cards sit on bare head
+  skin — MH bakes a scalp/root gradient into
+  `FaceBakedGroomRootTipGradientRegionMasks` (already in `01-fbx/`) but
+  stage 02 doesn't sample it. Reads as "wig" up close
+  ([#15](https://github.com/smorchj/metahuman-to-glb/issues/15)).
 - **Hair color curve is too bright.** Two-pass hair, anisotropic spec via
   `_CardsAtlas_Tangent`, root darkening and per-strand seed variance are
   all wired now, but the `hairMelanin` → RGB curve in the MI-synth
   basecolor is lifted — Taro's hair reads too blonde vs the UE reference.
   Tip translucency also still missing
   ([#13](https://github.com/smorchj/metahuman-to-glb/issues/13)).
+- **Asymmetric brow expressions are muted.** ARKit 52's `browInnerUp` is
+  a single bilateral key (not split) and MediaPipe tends to regress L/R
+  toward symmetry under low signal, so lift-one-brow / angry-knot
+  expressions collapse. Three linked issues:
+  split `browInnerUp` into L/R custom keys
+  ([#17](https://github.com/smorchj/metahuman-to-glb/issues/17)),
+  add a `browInward` L/R pair for the nose-scrunch pinch
+  ([#16](https://github.com/smorchj/metahuman-to-glb/issues/16)),
+  decouple L/R signals in the MediaPipe driver
+  ([#18](https://github.com/smorchj/metahuman-to-glb/issues/18)).
 - **Clothing picks the wrong base colour.** Mask-blended
   `diffuse_color_1/2` aren't wired through correctly — garments render
   flat instead of showing the secondary tone in masked regions
@@ -74,6 +96,11 @@ override table in the viewer.
   (driven by `hairRedness`) so it's pinned to dark brown. Should be
   derived properly from the scalp hair color
   ([#8](https://github.com/smorchj/metahuman-to-glb/issues/8)).
+- **GLB payloads are over GitHub's 50 MB recommendation.** Ada at 51 MB,
+  Taro at 76 MB after Draco mesh compression + 1024/256 texture caps.
+  Switching sidecar + embedded textures to KTX2/Basis Universal would
+  drop both well under 50 MB and speed up client decode
+  ([#20](https://github.com/smorchj/metahuman-to-glb/issues/20)).
 
 ## Contributing
 
