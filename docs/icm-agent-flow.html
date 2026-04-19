@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ICM — Agent Behavior in a Context-Structured Pipeline</title>
+<meta name="viewport" content="width=1920,initial-scale=1" />
+<style>
+  :root {
+    --bg-0: #05070d;
+    --bg-1: #0b1020;
+    --grid: rgba(80, 120, 200, 0.07);
+    --ink: #e7ecff;
+    --ink-dim: #8795b8;
+    --accent: #7cf9ff;      /* cyan — Opus */
+    --accent-2: #c084fc;    /* violet — Haiku */
+    --accent-3: #facc15;    /* amber — manifest */
+    --good: #4ade80;
+    --line: rgba(180,200,255,0.15);
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: radial-gradient(ellipse at 50% 30%, #0a1330 0%, var(--bg-0) 60%);
+    color: var(--ink);
+    font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    transform-origin: top left;
+    background:
+      linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 48px 48px,
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 48px 48px;
+  }
+  /* scanlines */
+  .stage::before {
+    content: "";
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+      180deg,
+      rgba(255,255,255,0.015) 0 2px,
+      transparent 2px 4px
+    );
+    pointer-events: none;
+    mix-blend-mode: overlay;
+  }
+  /* vignette */
+  .stage::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%);
+    pointer-events: none;
+  }
+
+  .header {
+    position: absolute;
+    top: 48px;
+    left: 80px;
+    z-index: 5;
+  }
+  .kicker {
+    font-size: 16px;
+    letter-spacing: 0.5em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    opacity: 0.85;
+  }
+  .title {
+    font-size: 58px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+  }
+  .title em {
+    font-style: normal;
+    color: var(--accent);
+    text-shadow: 0 0 32px rgba(124, 249, 255, 0.35);
+  }
+  .sub {
+    margin-top: 14px;
+    font-size: 22px;
+    color: var(--ink-dim);
+    max-width: 760px;
+    line-height: 1.4;
+  }
+
+  .footer {
+    position: absolute;
+    bottom: 40px;
+    left: 80px;
+    right: 80px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--ink-dim);
+    font-size: 18px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    z-index: 5;
+  }
+  .footer .dot { color: var(--accent); }
+
+  /* ---------- Layer stack (left column) ---------- */
+  .layers {
+    position: absolute;
+    top: 220px;
+    left: 80px;
+    width: 420px;
+    z-index: 4;
+  }
+  .layers-title {
+    font-size: 13px;
+    letter-spacing: 0.35em;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+  .layer {
+    position: relative;
+    padding: 16px 20px;
+    margin-bottom: 10px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(12, 18, 40, 0.55);
+    backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    transition: all 0.35s ease;
+  }
+  .layer .tag {
+    font-size: 11px;
+    letter-spacing: 0.25em;
+    color: var(--accent);
+    min-width: 62px;
+  }
+  .layer .body {
+    flex: 1;
+  }
+  .layer .name {
+    font-size: 17px;
+    font-weight: 600;
+  }
+  .layer .path {
+    font-family: "JetBrains Mono", "Consolas", monospace;
+    font-size: 12px;
+    color: var(--ink-dim);
+    margin-top: 2px;
+  }
+  .layer.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 0 30px rgba(124,249,255,0.25);
+    background: rgba(20, 40, 80, 0.75);
+  }
+  .layer.loaded {
+    border-color: var(--accent-2);
+    box-shadow: 0 0 0 1px var(--accent-2), 0 0 20px rgba(192,132,252,0.2);
+  }
+
+  /* ---------- Opus orchestrator (center) ---------- */
+  .opus {
+    position: absolute;
+    left: 600px;
+    top: 440px;
+    width: 240px;
+    height: 240px;
+    z-index: 3;
+  }
+  .opus .core {
+    position: absolute;
+    inset: 70px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 40% 35%, #cbf9ff, var(--accent) 45%, #1d6b80 90%);
+    box-shadow:
+      0 0 40px rgba(124,249,255,0.7),
+      0 0 120px rgba(124,249,255,0.35),
+      inset 0 0 40px rgba(255,255,255,0.3);
+    animation: coreBreath 2.4s ease-in-out infinite;
+  }
+  .opus .ring {
+    position: absolute;
+    inset: 0;
+    border: 1px solid rgba(124,249,255,0.35);
+    border-radius: 50%;
+    animation: ringSpin 16s linear infinite;
+  }
+  .opus .ring.r2 { inset: 24px; animation-duration: 10s; animation-direction: reverse; border-style: dashed; opacity: 0.5;}
+  .opus .ring.r3 { inset: 48px; animation-duration: 7s; border-color: rgba(192,132,252,0.3); }
+  .opus .label {
+    position: absolute;
+    top: -38px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 14px;
+    letter-spacing: 0.3em;
+    color: var(--accent);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .opus .role {
+    position: absolute;
+    bottom: -40px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 13px;
+    color: var(--ink-dim);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  @keyframes coreBreath {
+    0%, 100% { transform: scale(1); filter: brightness(1); }
+    50%      { transform: scale(1.06); filter: brightness(1.15); }
+  }
+  @keyframes ringSpin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* ---------- Stage cards (right column) ---------- */
+  .stages {
+    position: absolute;
+    top: 210px;
+    right: 80px;
+    width: 620px;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .stage-card {
+    position: relative;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: rgba(12, 18, 40, 0.6);
+    backdrop-filter: blur(6px);
+    padding: 14px 22px;
+    transition: all 0.4s ease;
+  }
+  .stage-card .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .stage-card .num {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-dim);
+    letter-spacing: 0.2em;
+  }
+  .stage-card .status {
+    font-size: 10px;
+    letter-spacing: 0.25em;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    text-transform: uppercase;
+  }
+  .stage-card .name {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .stage-card .desc {
+    font-size: 13px;
+    color: var(--ink-dim);
+    margin-bottom: 8px;
+  }
+  .stage-card .io {
+    display: flex;
+    gap: 16px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-dim);
+  }
+  .stage-card .io span.arrow { color: var(--accent); }
+
+  .stage-card .progress {
+    position: absolute;
+    left: 0; bottom: 0;
+    height: 3px;
+    width: 0%;
+    background: linear-gradient(90deg, var(--accent-2), var(--accent));
+    box-shadow: 0 0 12px var(--accent-2);
+    border-radius: 0 0 14px 14px;
+    transition: width 3.2s ease;
+  }
+
+  .stage-card.active {
+    border-color: var(--accent-2);
+    box-shadow: 0 0 0 1px var(--accent-2), 0 0 40px rgba(192,132,252,0.22);
+    background: rgba(36, 22, 66, 0.6);
+  }
+  .stage-card.active .status {
+    color: var(--accent-2);
+    border-color: var(--accent-2);
+  }
+  .stage-card.done {
+    border-color: var(--good);
+  }
+  .stage-card.done .status {
+    color: var(--good);
+    border-color: var(--good);
+  }
+  .stage-card.done .progress { width: 100% !important; }
+
+  /* Haiku context-window badge that appears inside the active stage */
+  .ctx-window {
+    margin-top: 10px;
+    border: 1px dashed var(--accent-2);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: #f1e4ff;
+    background: rgba(40, 20, 80, 0.35);
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity 0.4s, transform 0.4s;
+    line-height: 1.45;
+  }
+  .ctx-window.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .ctx-window .hdr {
+    color: var(--accent-2);
+    letter-spacing: 0.2em;
+    font-size: 9px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .ctx-window .f  { display: block; }
+  .ctx-window .f::before {
+    content: "▸ ";
+    color: var(--accent);
+  }
+
+  /* ---------- SVG connectors ---------- */
+  svg.wires {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  /* Haiku packet flying along the wire */
+  .packet {
+    position: absolute;
+    width: 80px;
+    height: 40px;
+    border: 1px solid var(--accent-2);
+    border-radius: 6px;
+    background: rgba(40,20,80,0.9);
+    box-shadow: 0 0 20px var(--accent-2), 0 0 60px rgba(192,132,252,0.4);
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    color: #f3e4ff;
+    letter-spacing: 0.15em;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .packet::before {
+    content: "";
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 60px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent-2));
+  }
+
+  /* Manifest output token */
+  .manifest {
+    position: absolute;
+    right: 80px;
+    bottom: 110px;
+    display: flex;
+    gap: 8px;
+    z-index: 5;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13px;
+    color: var(--accent-3);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    opacity: 0;
+    transition: opacity 0.4s;
+  }
+  .manifest.visible { opacity: 1; }
+  .manifest .pill {
+    padding: 6px 12px;
+    border: 1px solid var(--accent-3);
+    border-radius: 999px;
+    background: rgba(60, 40, 0, 0.35);
+    box-shadow: 0 0 12px rgba(250, 204, 21, 0.35);
+  }
+
+  /* Character chip (input) */
+  .character {
+    position: absolute;
+    left: 80px;
+    bottom: 110px;
+    z-index: 5;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13px;
+    color: var(--accent);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  .character .pill {
+    padding: 6px 12px;
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    background: rgba(0,40,60,0.35);
+  }
+
+  /* ---------- Caption (bottom-center, below diagram) ---------- */
+  .caption {
+    position: absolute;
+    bottom: 140px;
+    left: 44%;
+    transform: translateX(-50%);
+    padding: 10px 22px;
+    border: 1px solid rgba(124, 249, 255, 0.35);
+    border-radius: 999px;
+    background: rgba(12, 18, 40, 0.78);
+    backdrop-filter: blur(8px);
+    font-size: 18px;
+    color: var(--ink);
+    letter-spacing: 0.05em;
+    text-align: center;
+    z-index: 6;
+    max-width: 760px;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.5s;
+    box-shadow: 0 0 24px rgba(124, 249, 255, 0.15);
+  }
+  .caption.visible { opacity: 1; }
+  .caption b { color: var(--accent); font-weight: 600; }
+  .caption em { color: var(--accent-2); font-style: normal; font-weight: 600; }
+  body.no-captions .caption { display: none !important; }
+
+  /* ---------- Captions toggle (top-right) ---------- */
+  .toggle {
+    position: absolute;
+    top: 48px;
+    right: 80px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(12, 18, 40, 0.7);
+    backdrop-filter: blur(6px);
+    color: var(--ink-dim);
+    font-size: 12px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    cursor: pointer;
+    user-select: none;
+    font-family: inherit;
+    transition: all 0.25s ease;
+  }
+  .toggle:hover { border-color: var(--accent); color: var(--ink); }
+  .toggle .led {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent);
+    transition: all 0.25s ease;
+  }
+  body.no-captions .toggle .led {
+    background: #444; box-shadow: none;
+  }
+  body.no-captions .toggle { color: #555; }
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <!-- Header -->
+  <div class="header">
+    <div class="kicker">Interpretable Context Methodology</div>
+    <div class="title">Opus orchestrates. <em>Haiku executes.</em></div>
+    <div class="sub">A folder-routed pipeline where every agent loads only the context it needs — nothing more.</div>
+  </div>
+
+  <!-- Captions toggle -->
+  <button class="toggle" id="capToggle" title="Toggle captions (press C)">
+    <span class="led"></span>
+    <span>Captions</span>
+  </button>
+
+  <!-- Layer stack -->
+  <div class="layers" id="layers">
+    <div class="layers-title">Context Layers</div>
+    <div class="layer" data-layer="0">
+      <div class="tag">L0</div>
+      <div class="body">
+        <div class="name">System Orientation</div>
+        <div class="path">CLAUDE.md</div>
+      </div>
+    </div>
+    <div class="layer" data-layer="1">
+      <div class="tag">L1</div>
+      <div class="body">
+        <div class="name">Task Routing</div>
+        <div class="path">CONTEXT.md</div>
+      </div>
+    </div>
+    <div class="layer" data-layer="2">
+      <div class="tag">L2</div>
+      <div class="body">
+        <div class="name">Stage Contract</div>
+        <div class="path">stages/NN/CONTEXT.md</div>
+      </div>
+    </div>
+    <div class="layer" data-layer="3">
+      <div class="tag">L3</div>
+      <div class="body">
+        <div class="name">Shared Reference</div>
+        <div class="path">_config/ • skills/</div>
+      </div>
+    </div>
+    <div class="layer" data-layer="4">
+      <div class="tag">L4</div>
+      <div class="body">
+        <div class="name">Character Artifacts</div>
+        <div class="path">characters/&lt;id&gt;/</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Opus orchestrator -->
+  <div class="opus">
+    <div class="label">OPUS · ORCHESTRATOR</div>
+    <div class="ring"></div>
+    <div class="ring r2"></div>
+    <div class="ring r3"></div>
+    <div class="core"></div>
+    <div class="role">designs · routes · reviews</div>
+  </div>
+
+  <!-- Stage cards -->
+  <div class="stages" id="stages">
+    <div class="stage-card" data-stage="0">
+      <div class="head">
+        <div class="num">stages/01-metahuman-engine-export</div>
+        <div class="status">idle</div>
+      </div>
+      <div class="name">Export FBX + Textures</div>
+      <div class="desc">UE MetaHuman → FBX mesh, rig, and texture atlas</div>
+      <div class="io"><span>source/</span><span class="arrow">→</span><span>01-fbx/</span></div>
+      <div class="progress"></div>
+    </div>
+
+    <div class="stage-card" data-stage="1">
+      <div class="head">
+        <div class="num">stages/02-blender-assemble</div>
+        <div class="status">idle</div>
+      </div>
+      <div class="name">Assemble &amp; Clean in Blender</div>
+      <div class="desc">Merge meshes, fix normals, bake material tree</div>
+      <div class="io"><span>01-fbx/</span><span class="arrow">→</span><span>02-blend/</span></div>
+      <div class="progress"></div>
+    </div>
+
+    <div class="stage-card" data-stage="2">
+      <div class="head">
+        <div class="num">stages/03-glb-export</div>
+        <div class="status">idle</div>
+      </div>
+      <div class="name">GLB Export &amp; Web Constraints</div>
+      <div class="desc">Draco compression, texture sizing, size budget</div>
+      <div class="io"><span>02-blend/</span><span class="arrow">→</span><span>03-glb/</span></div>
+      <div class="progress"></div>
+    </div>
+  </div>
+
+  <!-- Input / output chips -->
+  <div class="character">
+    <div class="pill">▸ characters/ada</div>
+  </div>
+  <div class="manifest" id="manifest">
+    <div class="pill" id="mpill">● manifest.json updated</div>
+  </div>
+
+  <!-- Caption -->
+  <div class="caption" id="caption"></div>
+
+  <!-- Flying Haiku packet -->
+  <div class="packet" id="packet">HAIKU</div>
+
+  <!-- SVG wires -->
+  <svg class="wires" viewBox="0 0 1920 1080" preserveAspectRatio="none">
+    <defs>
+      <linearGradient id="wire-grad" x1="0" x2="1">
+        <stop offset="0"  stop-color="#7cf9ff" stop-opacity="0.8"/>
+        <stop offset="1"  stop-color="#c084fc" stop-opacity="0.2"/>
+      </linearGradient>
+      <filter id="glow">
+        <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+        <feMerge>
+          <feMergeNode in="coloredBlur"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+    </defs>
+
+    <!-- Layers → Opus (soft feed lines) -->
+    <g stroke="url(#wire-grad)" stroke-width="1" fill="none" opacity="0.4">
+      <path d="M500 330 C 600 330, 640 520, 720 560" />
+      <path d="M500 390 C 600 390, 640 540, 720 560" />
+      <path d="M500 450 C 600 450, 640 560, 720 560" />
+      <path d="M500 510 C 600 510, 640 560, 720 560" />
+      <path d="M500 570 C 600 570, 640 570, 720 570" />
+    </g>
+
+    <!-- Opus → Stages (animated main wires) -->
+    <g fill="none" stroke-width="2" filter="url(#glow)">
+      <path id="wire-0" d="M840 560 C 1020 560, 1080 300, 1220 300" stroke="url(#wire-grad)" />
+      <path id="wire-1" d="M840 560 C 1020 560, 1080 490, 1220 490" stroke="url(#wire-grad)" />
+      <path id="wire-2" d="M840 560 C 1020 560, 1080 680, 1220 680" stroke="url(#wire-grad)" />
+    </g>
+
+    <!-- animated dots along the wires (ambient data flow) -->
+    <g>
+      <circle r="4" fill="#7cf9ff">
+        <animateMotion dur="4s" repeatCount="indefinite">
+          <mpath href="#wire-0"/>
+        </animateMotion>
+        <animate attributeName="opacity" values="0;1;1;0" dur="4s" repeatCount="indefinite"/>
+      </circle>
+      <circle r="4" fill="#7cf9ff">
+        <animateMotion dur="4s" begin="1.3s" repeatCount="indefinite">
+          <mpath href="#wire-1"/>
+        </animateMotion>
+        <animate attributeName="opacity" values="0;1;1;0" dur="4s" begin="1.3s" repeatCount="indefinite"/>
+      </circle>
+      <circle r="4" fill="#7cf9ff">
+        <animateMotion dur="4s" begin="2.6s" repeatCount="indefinite">
+          <mpath href="#wire-2"/>
+        </animateMotion>
+        <animate attributeName="opacity" values="0;1;1;0" dur="4s" begin="2.6s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+  </svg>
+
+  <div class="footer">
+    <div>metahuman <span class="dot">·</span> blender <span class="dot">·</span> glb</div>
+    <div>narrow context · deterministic stages · machine-readable manifests</div>
+  </div>
+</div>
+
+<script>
+  // --- auto-scale the 1920x1080 stage to the viewport ---
+  const stageEl = document.getElementById("stage");
+  function fit() {
+    const sx = window.innerWidth / 1920;
+    const sy = window.innerHeight / 1080;
+    const s = Math.min(sx, sy);
+    stageEl.style.transform = `scale(${s})`;
+    stageEl.style.left = ((window.innerWidth - 1920 * s) / 2) + "px";
+    stageEl.style.top  = ((window.innerHeight - 1080 * s) / 2) + "px";
+    stageEl.style.position = "absolute";
+  }
+  window.addEventListener("resize", fit); fit();
+
+  // --- staged animation ---
+  const layers     = [...document.querySelectorAll(".layer")];
+  const cards      = [...document.querySelectorAll(".stage-card")];
+  const packet     = document.getElementById("packet");
+  const manifest   = document.getElementById("manifest");
+  const mpill      = document.getElementById("mpill");
+  const caption    = document.getElementById("caption");
+
+  // Context files each stage's Haiku actually loads
+  const stageCtx = [
+    [
+      "stages/01-*/CONTEXT.md",
+      "_config/pipeline.yaml",
+      "skills/metahuman-assets.md",
+      "characters/ada/source/"
+    ],
+    [
+      "stages/02-*/CONTEXT.md",
+      "_config/pipeline.yaml",
+      "skills/fbx-cleanup-rules.md",
+      "characters/ada/01-fbx/"
+    ],
+    [
+      "stages/03-*/CONTEXT.md",
+      "_config/pipeline.yaml",
+      "skills/glb-web-budget.md",
+      "characters/ada/02-blend/"
+    ]
+  ];
+
+  const captions = [
+    "Opus reads <b>CONTEXT.md</b> and routes the character to the next stage.",
+    "A <em>Haiku</em> worker spawns with a <b>narrow context window</b>.",
+    "Stage runs a deterministic script. Outputs land in the character folder.",
+    "Haiku writes <b>manifest.json</b>. Opus inspects and dispatches next."
+  ];
+
+  // Captions toggle
+  const capToggle = document.getElementById("capToggle");
+  const CAP_KEY = "icm.captions";
+  if (localStorage.getItem(CAP_KEY) === "off") document.body.classList.add("no-captions");
+  capToggle.addEventListener("click", () => {
+    document.body.classList.toggle("no-captions");
+    localStorage.setItem(CAP_KEY, document.body.classList.contains("no-captions") ? "off" : "on");
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "c" || e.key === "C") capToggle.click();
+  });
+
+  // Center points (1920x1080 coord space) of opus & each card.
+  // cardCenters are recomputed from the DOM so they always track the cards.
+  const OPUS = { x: 840, y: 560 };
+  const cardCenters = [
+    { x: 1380, y: 300 },
+    { x: 1380, y: 490 },
+    { x: 1380, y: 680 }
+  ];
+
+  function alignWires() {
+    const sRect = stageEl.getBoundingClientRect();
+    const scale = sRect.width / 1920 || 1;
+    cards.forEach((card, i) => {
+      const r = card.getBoundingClientRect();
+      // convert to 1920x1080 canvas coords
+      const leftX  = (r.left - sRect.left) / scale;
+      const centerY = (r.top - sRect.top) / scale + (r.height / scale) / 2;
+      // cache center for the packet animation
+      cardCenters[i].x = leftX + 80;
+      cardCenters[i].y = centerY;
+      // redraw the SVG wire to meet the card's left edge
+      const wire = document.getElementById(`wire-${i}`);
+      if (wire) {
+        const endX = leftX;
+        wire.setAttribute("d",
+          `M${OPUS.x} ${OPUS.y} C 1020 ${OPUS.y}, 1080 ${centerY}, ${endX} ${centerY}`
+        );
+      }
+    });
+  }
+  window.addEventListener("resize", alignWires);
+  // run once after layout settles
+  requestAnimationFrame(() => requestAnimationFrame(alignWires));
+
+  // Re-align whenever any card changes size (ctx-window expanding/collapsing
+  // pushes the other cards, so every wire endpoint must move with them).
+  if ("ResizeObserver" in window) {
+    const ro = new ResizeObserver(() => alignWires());
+    cards.forEach(c => ro.observe(c));
+  }
+  // Also re-align through the CSS transition on the ctx-window (opacity/transform).
+  // ResizeObserver catches the height change instantly, but belt-and-suspenders:
+  document.addEventListener("transitionend", (e) => {
+    if (e.target.classList && e.target.classList.contains("ctx-window")) alignWires();
+  }, true);
+
+  function setCaption(i) {
+    caption.innerHTML = captions[i];
+    caption.classList.add("visible");
+  }
+
+  function activateLayers(stageIdx) {
+    // Haiku, per-stage, loads: L2 (its contract), L3 (shared ref), L4 (character)
+    layers.forEach(l => { l.classList.remove("active", "loaded"); });
+    [2,3,4].forEach(idx => layers[idx].classList.add("loaded"));
+  }
+  function resetLayers() { layers.forEach(l => l.classList.remove("active","loaded")); }
+
+  function flyPacketTo(cardIdx, onArrive) {
+    const target = cardCenters[cardIdx];
+    // position packet at opus, animate toward card
+    packet.style.transition = "none";
+    packet.style.left = (OPUS.x - 40) + "px";
+    packet.style.top  = (OPUS.y - 20) + "px";
+    packet.style.opacity = "0";
+    packet.style.transform = "scale(0.6)";
+    // kick
+    requestAnimationFrame(() => {
+      packet.style.transition = "left 1.8s cubic-bezier(.5,.1,.3,1), top 1.8s cubic-bezier(.5,.1,.3,1), opacity 0.4s, transform 1.8s";
+      packet.style.opacity = "1";
+      packet.style.transform = "scale(1)";
+      packet.style.left = (target.x - 40) + "px";
+      packet.style.top  = (target.y - 20) + "px";
+    });
+    setTimeout(() => {
+      // absorb
+      packet.style.transition = "opacity 0.5s, transform 0.5s";
+      packet.style.opacity = "0";
+      packet.style.transform = "scale(0.3)";
+      onArrive && onArrive();
+    }, 1850);
+  }
+
+  function runStage(cardIdx, onDone) {
+    const card = cards[cardIdx];
+    card.classList.remove("done");
+    card.classList.add("active");
+    card.querySelector(".status").textContent = "loading ctx";
+
+    // Inject the narrow context window inside the stage card
+    let ctx = card.querySelector(".ctx-window");
+    if (!ctx) {
+      ctx = document.createElement("div");
+      ctx.className = "ctx-window";
+      ctx.innerHTML =
+        `<div class="hdr">Haiku context window</div>` +
+        stageCtx[cardIdx].map(f => `<span class="f">${f}</span>`).join("");
+      card.appendChild(ctx);
+    }
+    requestAnimationFrame(() => ctx.classList.add("visible"));
+
+    setTimeout(() => {
+      card.querySelector(".status").textContent = "executing";
+      card.querySelector(".progress").style.width = "100%";
+    }, 1500);
+
+    setTimeout(() => {
+      card.querySelector(".status").textContent = "done";
+      card.classList.remove("active");
+      card.classList.add("done");
+      onDone && onDone();
+    }, 4900);
+  }
+
+  function hideCtx(cardIdx) {
+    const ctx = cards[cardIdx].querySelector(".ctx-window");
+    if (ctx) ctx.classList.remove("visible");
+  }
+
+  function resetAll() {
+    cards.forEach(c => {
+      c.classList.remove("active", "done");
+      c.querySelector(".status").textContent = "idle";
+      c.querySelector(".progress").style.width = "0%";
+      hideCtx([...cards].indexOf(c));
+    });
+    manifest.classList.remove("visible");
+    caption.classList.remove("visible");
+    resetLayers();
+  }
+
+  // --- master timeline ---
+  async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  async function runOnce() {
+    resetAll();
+
+    // Beat 1 — Opus reads routing
+    layers[0].classList.add("active");
+    layers[1].classList.add("active");
+    setCaption(0);
+    await sleep(3400);
+
+    for (let i = 0; i < 3; i++) {
+      // Beat 2 — Haiku packet flies
+      setCaption(1);
+      flyPacketTo(i);
+      await sleep(1500);
+      activateLayers(i);
+      await sleep(700);
+
+      // Beat 3 — Stage executes
+      setCaption(2);
+      await new Promise(res => runStage(i, res));
+
+      // Beat 4 — Manifest update
+      mpill.textContent = `● manifest: stage 0${i+1} → done`;
+      manifest.classList.add("visible");
+      setCaption(3);
+      await sleep(2400);
+      manifest.classList.remove("visible");
+      hideCtx(i);
+      resetLayers();
+      await sleep(900);
+    }
+
+    // Final hold
+    caption.innerHTML = "One pipeline. Three contracts. <b>Narrow context</b> at every step.";
+    caption.classList.add("visible");
+    cards.forEach(c => c.classList.add("done"));
+    await sleep(5000);
+  }
+
+  (async function loop() {
+    while (true) {
+      await runOnce();
+      await sleep(1200);
+    }
+  })();
+</script>
+</body>
+</html>

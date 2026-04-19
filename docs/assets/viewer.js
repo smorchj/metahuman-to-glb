@@ -1259,7 +1259,106 @@ function buildBlendshapePanel(container, morphMeshes) {
   liveBtn.title = 'Drive blendshapes from your webcam (MediaPipe FaceLandmarker). Requires camera permission.';
   liveBtn.style.cssText = 'flex:1;padding:4px 8px;background:#2a2f3a;color:#e8e8e8;border:1px solid #3a4050;border-radius:4px;cursor:pointer;font:inherit';
   resetRow.appendChild(liveBtn);
+
+  const recBtn = document.createElement('button');
+  recBtn.textContent = '● rec mic';
+  recBtn.title = 'Record microphone to an MP4 file (press R)';
+  recBtn.style.cssText = 'flex:1;padding:4px 8px;background:#2a2f3a;color:#e8e8e8;border:1px solid #3a4050;border-radius:4px;cursor:pointer;font:inherit';
+  resetRow.appendChild(recBtn);
   body.appendChild(resetRow);
+
+  // ---- mic-only MP4 recorder ----
+  (function () {
+    let micStream = null, recorder = null, chunks = [], startedAt = 0, tickId = 0;
+    const pickMime = () => {
+      const cands = [
+        'audio/mp4;codecs=mp4a.40.2', 'audio/mp4',
+        'audio/webm;codecs=opus', 'audio/webm',
+      ];
+      for (const m of cands) if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
+      return '';
+    };
+    const fmt = (ms) => {
+      const s = Math.floor(ms / 1000);
+      return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+    };
+    const setIdle = () => {
+      recBtn.textContent = '● rec mic';
+      recBtn.style.background = '#2a2f3a';
+      recBtn.style.color = '#e8e8e8';
+      recBtn.style.borderColor = '#3a4050';
+    };
+    const setRec = () => {
+      recBtn.style.background = '#5a1e28';
+      recBtn.style.color = '#ffd6de';
+      recBtn.style.borderColor = '#ff5a7a';
+    };
+    const start = async () => {
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+        });
+      } catch (e) {
+        statusEl.textContent = 'mic denied: ' + (e.message || e);
+        return;
+      }
+      const mime = pickMime();
+      try {
+        recorder = new MediaRecorder(micStream, mime ? { mimeType: mime, audioBitsPerSecond: 128000 } : undefined);
+      } catch (e) {
+        statusEl.textContent = 'recorder failed: ' + (e.message || e);
+        micStream.getTracks().forEach((t) => t.stop());
+        micStream = null;
+        return;
+      }
+      chunks = [];
+      recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size) chunks.push(ev.data); };
+      recorder.onstop = () => {
+        const usedMime = recorder.mimeType || mime || 'audio/webm';
+        const ext = usedMime.startsWith('audio/mp4') ? 'mp4' : 'webm';
+        const blob = new Blob(chunks, { type: usedMime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        a.href = url;
+        a.download = `mh-mic-${ts}.${ext}`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        micStream.getTracks().forEach((t) => t.stop());
+        micStream = null; recorder = null;
+        statusEl.textContent = ext === 'webm'
+          ? 'saved webm (browser lacks mp4 audio); ffmpeg -i in.webm -c:a aac out.mp4'
+          : 'mic saved';
+        setIdle();
+      };
+      recorder.start(250);
+      startedAt = Date.now();
+      statusEl.textContent = 'rec 00:00';
+      tickId = setInterval(() => {
+        statusEl.textContent = 'rec ' + fmt(Date.now() - startedAt);
+      }, 250);
+      recBtn.textContent = '■ stop';
+      setRec();
+    };
+    const stop = () => {
+      clearInterval(tickId); tickId = 0;
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+    };
+    recBtn.addEventListener('click', () => {
+      if (recorder && recorder.state === 'recording') stop();
+      else start();
+    });
+    window.addEventListener('keydown', (e) => {
+      if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey &&
+          !['INPUT','TEXTAREA'].includes(document.activeElement?.tagName)) {
+        recBtn.click();
+      }
+    });
+    window.addEventListener('beforeunload', () => {
+      if (recorder && recorder.state === 'recording') recorder.stop();
+      if (micStream) micStream.getTracks().forEach((t) => t.stop());
+    });
+  })();
 
   const statusEl = document.createElement('div');
   statusEl.style.cssText = 'font-size:10px;color:#89a;margin:0 0 4px;min-height:12px';
