@@ -999,6 +999,39 @@ function applyEyelashes(mat, p, t, loadTex) {
 
 // ---------------- face accessory (teeth / saliva / eyeshell / eyeEdge / cartilage)
 
+// Procedural alpha map for the eye_occlusion slot. MH's MI_EyeOcclusion is
+// shader-procedural in UE (no texture assets), so we synthesise a radial
+// gradient in a canvas: center=transparent, rim=opaque. Cached across all
+// characters so we only allocate once per session.
+let _eyeOccAlphaTexCache = null;
+function _eyeOcclusionAlphaMap() {
+  if (_eyeOccAlphaTexCache) return _eyeOccAlphaTexCache;
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#000';                       // baseline: no darkening
+  ctx.fillRect(0, 0, size, size);
+  // Radial gradient — transparent core, opaque rim. Three.js samples alphaMap
+  // as (r+g+b)/3 so we paint in greyscale.
+  const grad = ctx.createRadialGradient(
+    size / 2, size / 2, size * 0.10,            // inner radius: pure black (alpha=0 → no darkening)
+    size / 2, size / 2, size * 0.55,            // outer radius: white (alpha=1 → full darkening)
+  );
+  grad.addColorStop(0.0, '#000');
+  grad.addColorStop(0.55, '#555');              // ramp up gradually
+  grad.addColorStop(1.0, '#fff');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.needsUpdate = true;
+  _eyeOccAlphaTexCache = tex;
+  return tex;
+}
+
 function applyFaceAccessory(mat, spec, p, t, loadTex) {
   const slot = spec.face_slot;
 
@@ -1032,9 +1065,16 @@ function applyFaceAccessory(mat, spec, p, t, loadTex) {
 
   if (slot === 'eye_occlusion') {
     // Dark ring under the lid that sells socket depth.
+    // MH's MI_EyeOcclusion has zero textures (UE does the fade procedurally
+    // via the shader graph, not round-trippable through glTF). We synthesise
+    // a radial alpha map in-viewer: transparent at UV center, opaque at rim.
+    // This fixes the mid-blink dark streak that the old flat 40% alpha caused
+    // when the upper+lower lid halves of the skirt overlapped in screen space
+    // (the overlap now happens where both layers are near-zero alpha).
     mat.color.setRGB(0.02, 0.015, 0.01);
     mat.transparent = true;
-    mat.opacity = 0.4;
+    mat.opacity = 1.0;                  // alpha driven by map, not flat
+    mat.alphaMap = _eyeOcclusionAlphaMap();
     mat.roughness = 0.8;
     mat.depthWrite = false;
   }
@@ -1259,106 +1299,7 @@ function buildBlendshapePanel(container, morphMeshes) {
   liveBtn.title = 'Drive blendshapes from your webcam (MediaPipe FaceLandmarker). Requires camera permission.';
   liveBtn.style.cssText = 'flex:1;padding:4px 8px;background:#2a2f3a;color:#e8e8e8;border:1px solid #3a4050;border-radius:4px;cursor:pointer;font:inherit';
   resetRow.appendChild(liveBtn);
-
-  const recBtn = document.createElement('button');
-  recBtn.textContent = '● rec mic';
-  recBtn.title = 'Record microphone to an MP4 file (press R)';
-  recBtn.style.cssText = 'flex:1;padding:4px 8px;background:#2a2f3a;color:#e8e8e8;border:1px solid #3a4050;border-radius:4px;cursor:pointer;font:inherit';
-  resetRow.appendChild(recBtn);
   body.appendChild(resetRow);
-
-  // ---- mic-only MP4 recorder ----
-  (function () {
-    let micStream = null, recorder = null, chunks = [], startedAt = 0, tickId = 0;
-    const pickMime = () => {
-      const cands = [
-        'audio/mp4;codecs=mp4a.40.2', 'audio/mp4',
-        'audio/webm;codecs=opus', 'audio/webm',
-      ];
-      for (const m of cands) if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
-      return '';
-    };
-    const fmt = (ms) => {
-      const s = Math.floor(ms / 1000);
-      return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
-    };
-    const setIdle = () => {
-      recBtn.textContent = '● rec mic';
-      recBtn.style.background = '#2a2f3a';
-      recBtn.style.color = '#e8e8e8';
-      recBtn.style.borderColor = '#3a4050';
-    };
-    const setRec = () => {
-      recBtn.style.background = '#5a1e28';
-      recBtn.style.color = '#ffd6de';
-      recBtn.style.borderColor = '#ff5a7a';
-    };
-    const start = async () => {
-      try {
-        micStream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
-        });
-      } catch (e) {
-        statusEl.textContent = 'mic denied: ' + (e.message || e);
-        return;
-      }
-      const mime = pickMime();
-      try {
-        recorder = new MediaRecorder(micStream, mime ? { mimeType: mime, audioBitsPerSecond: 128000 } : undefined);
-      } catch (e) {
-        statusEl.textContent = 'recorder failed: ' + (e.message || e);
-        micStream.getTracks().forEach((t) => t.stop());
-        micStream = null;
-        return;
-      }
-      chunks = [];
-      recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size) chunks.push(ev.data); };
-      recorder.onstop = () => {
-        const usedMime = recorder.mimeType || mime || 'audio/webm';
-        const ext = usedMime.startsWith('audio/mp4') ? 'mp4' : 'webm';
-        const blob = new Blob(chunks, { type: usedMime });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        a.href = url;
-        a.download = `mh-mic-${ts}.${ext}`;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
-        micStream.getTracks().forEach((t) => t.stop());
-        micStream = null; recorder = null;
-        statusEl.textContent = ext === 'webm'
-          ? 'saved webm (browser lacks mp4 audio); ffmpeg -i in.webm -c:a aac out.mp4'
-          : 'mic saved';
-        setIdle();
-      };
-      recorder.start(250);
-      startedAt = Date.now();
-      statusEl.textContent = 'rec 00:00';
-      tickId = setInterval(() => {
-        statusEl.textContent = 'rec ' + fmt(Date.now() - startedAt);
-      }, 250);
-      recBtn.textContent = '■ stop';
-      setRec();
-    };
-    const stop = () => {
-      clearInterval(tickId); tickId = 0;
-      if (recorder && recorder.state !== 'inactive') recorder.stop();
-    };
-    recBtn.addEventListener('click', () => {
-      if (recorder && recorder.state === 'recording') stop();
-      else start();
-    });
-    window.addEventListener('keydown', (e) => {
-      if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey &&
-          !['INPUT','TEXTAREA'].includes(document.activeElement?.tagName)) {
-        recBtn.click();
-      }
-    });
-    window.addEventListener('beforeunload', () => {
-      if (recorder && recorder.state === 'recording') recorder.stop();
-      if (micStream) micStream.getTracks().forEach((t) => t.stop());
-    });
-  })();
 
   const statusEl = document.createElement('div');
   statusEl.style.cssText = 'font-size:10px;color:#89a;margin:0 0 4px;min-height:12px';
@@ -1475,17 +1416,21 @@ function buildBlendshapePanel(container, morphMeshes) {
 
 // Per-key calibration for MediaPipe → ARKit mapping. MediaPipe's trained
 // blendshape head is noticeably biased:
-//   eyeBlinkLeft/Right   — has ~0.2–0.35 floor at rest (baseline noise from
-//                          mesh-fit regression), so the avatar looks sleepy
-//                          with eyes always half-closed. Subtract a floor,
+//   eyeBlinkLeft/Right   — ~0.3–0.45 floor at rest (baseline noise from
+//                          mesh-fit regression, higher than MediaPipe docs
+//                          claim), so the avatar looks sleepy with eyes
+//                          always half-closed. Subtract a larger floor,
 //                          then rescale so normal blinks still hit ~1.
+//   mouthSmile*          — severely under-reports: peak ~0.3–0.5 on a real
+//                          grin, never approaches 1.0. Needs aggressive gain
+//                          so smiles actually read on the avatar.
 //   brow* / cheek* /     — under-report, need 2–3× gain so expressions read.
 //     noseSneer*
 // Applied as: clamp((score - bias) * gain, 0, 1)
 // Tuned against a default iPhone front camera + neutral face at rest.
 const CAPTURE_CALIBRATION = {
-  eyeBlinkLeft:       { bias: 0.35, gain: 1.8 },
-  eyeBlinkRight:      { bias: 0.35, gain: 1.8 },
+  eyeBlinkLeft:       { bias: 0.45, gain: 2.0 },
+  eyeBlinkRight:      { bias: 0.45, gain: 2.0 },
   eyeSquintLeft:      { bias: 0.10, gain: 1.5 },
   eyeSquintRight:     { bias: 0.10, gain: 1.5 },
   browInnerUp:        { bias: 0.10, gain: 1.3 },
@@ -1497,6 +1442,15 @@ const CAPTURE_CALIBRATION = {
   cheekSquintRight:   { bias: 0.00, gain: 1.8 },
   noseSneerLeft:      { bias: 0.05, gain: 2.0 },
   noseSneerRight:     { bias: 0.05, gain: 2.0 },
+  // Smile is the most under-reported ARKit key from MediaPipe — raw peaks
+  // around 0.3–0.5 on a real grin. Floor small noise, then aggressive gain.
+  mouthSmileLeft:     { bias: 0.05, gain: 2.8 },
+  mouthSmileRight:    { bias: 0.05, gain: 2.8 },
+  // Mouth corners pulling down — same under-reporting problem as smile.
+  mouthFrownLeft:     { bias: 0.05, gain: 2.2 },
+  mouthFrownRight:    { bias: 0.05, gain: 2.2 },
+  // Jaw open reads weakly too; moderate gain so talking is visible.
+  jawOpen:            { bias: 0.05, gain: 1.5 },
 };
 
 function calibrateScore(name, raw) {
