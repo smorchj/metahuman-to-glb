@@ -125,6 +125,14 @@ override table in the viewer.
   Switching sidecar + embedded textures to KTX2/Basis Universal would
   drop both well under 50 MB and speed up client decode
   ([#20](https://github.com/smorchj/metahuman-to-glb/issues/20)).
+- **UE 5.7 is not supported.** Stage 01 is pinned to 5.6.1. In 5.7 Epic
+  collapsed the assembled character into a single `MetaHumanCharacter`
+  asset instead of emitting the separate `BP_<Name>` + body/face/outfit
+  skeletal mesh layout the commandlet walks via `AssetRegistry`
+  dependencies, so the exporter finds nothing. A 5.7-specific branch
+  under `stages/01-metahuman-engine-export/5.7.4/` needs to use the new
+  plugin's Python API to enumerate sub-meshes out of the character asset
+  ([#22](https://github.com/smorchj/metahuman-to-glb/issues/22)).
 
 ## Contributing
 
