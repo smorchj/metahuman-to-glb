@@ -94,6 +94,13 @@ def _build_character_page(
         shutil.copy2(mapping_src, out_dir / "mh_materials.json")
     tex_count = _copy_tree(char_dir / "03-glb" / "textures", out_dir / "textures")
 
+    # Gallery thumbnail (static image, so the index page doesn't need to
+    # load N GLBs simultaneously — mobile Safari OOMs on that). Stage 02
+    # bakes preview_threequarter.png; copy it into docs/ for the gallery.
+    thumb_src = char_dir / "02-blend" / "preview_threequarter.png"
+    if thumb_src.exists():
+        shutil.copy2(thumb_src, out_dir / "thumbnail.png")
+
     tri_count = glb_manifest.get("tri_count", 0)
     file_size_mb = _safe_mib(glb_manifest.get("file_size_bytes", 0))
 
@@ -157,10 +164,12 @@ def _build_gallery(
         # stale GLB after a re-export and any shape-key / geometry changes
         # stay invisible until a hard refresh.
         cb = built_at.replace(":", "").replace("-", "")
-        map_attr = f' data-map="characters/{cid}/mh_materials.json?v={cb}"' if has_map else ""
+        # Static thumbnail instead of a live GLB preview — the deployed
+        # file is docs/characters/<cid>/thumbnail.png (copied in
+        # _publish_character from stage-02's baked preview).
         cards.append(
             f'<a class="card" href="characters/{cid}/index.html">'
-            f'<div class="card-preview" data-glb="characters/{cid}/{cid}.glb?v={cb}"{map_attr}></div>'
+            f'<img class="card-preview" src="characters/{cid}/thumbnail.png?v={cb}" alt="{cid}" loading="lazy" />'
             f'<div class="meta">'
             f'<span class="name">{cid}</span>'
             f'<span class="stats"><span>{tri:,} tris</span>'

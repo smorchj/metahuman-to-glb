@@ -5,14 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MetaHuman gallery</title>
   <link rel="stylesheet" href="assets/style.css" />
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
-    }
-  }
-  </script>
 </head>
 <body class="gallery">
   <header>
@@ -29,17 +21,5 @@
     <span>&middot;</span>
     <span>built {{built_at}}</span>
   </footer>
-
-  <script type="module">
-    import { mount } from './assets/viewer.js?v={{cache_bust}}';
-    for (const el of document.querySelectorAll('.card-preview')) {
-      mount(el, {
-        glbUrl: el.dataset.glb,
-        mappingUrl: el.dataset.map || null,
-        autoRotate: true,
-        interactive: false,
-      }).catch((err) => console.warn('[gallery] card mount failed', err));
-    }
-  </script>
 </body>
 </html>

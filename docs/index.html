@@ -5,14 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MetaHuman gallery</title>
   <link rel="stylesheet" href="assets/style.css" />
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
-    }
-  }
-  </script>
 </head>
 <body class="gallery">
   <header>
@@ -21,26 +13,14 @@
   </header>
 
   <main class="grid">
-    <a class="card" href="characters/ada/index.html"><div class="card-preview" data-glb="characters/ada/ada.glb?v=20260419T184210Z" data-map="characters/ada/mh_materials.json?v=20260419T184210Z"></div><div class="meta"><span class="name">ada</span><span class="stats"><span>191,088 tris</span><span>&middot;</span><span>51.0 MiB</span></span></div></a>
-    <a class="card" href="characters/taro/index.html"><div class="card-preview" data-glb="characters/taro/taro.glb?v=20260419T184210Z" data-map="characters/taro/mh_materials.json?v=20260419T184210Z"></div><div class="meta"><span class="name">taro</span><span class="stats"><span>190,784 tris</span><span>&middot;</span><span>76.3 MiB</span></span></div></a>
+    <a class="card" href="characters/ada/index.html"><img class="card-preview" src="characters/ada/thumbnail.png?v=20260419T194044Z" alt="ada" loading="lazy" /><div class="meta"><span class="name">ada</span><span class="stats"><span>191,088 tris</span><span>&middot;</span><span>51.0 MiB</span></span></div></a>
+    <a class="card" href="characters/taro/index.html"><img class="card-preview" src="characters/taro/thumbnail.png?v=20260419T194044Z" alt="taro" loading="lazy" /><div class="meta"><span class="name">taro</span><span class="stats"><span>190,784 tris</span><span>&middot;</span><span>76.3 MiB</span></span></div></a>
   </main>
 
   <footer>
     <span>2 characters</span>
     <span>&middot;</span>
-    <span>built 2026-04-19T18:42:10Z</span>
+    <span>built 2026-04-19T19:40:44Z</span>
   </footer>
-
-  <script type="module">
-    import { mount } from './assets/viewer.js?v=20260419T184210Z';
-    for (const el of document.querySelectorAll('.card-preview')) {
-      mount(el, {
-        glbUrl: el.dataset.glb,
-        mappingUrl: el.dataset.map || null,
-        autoRotate: true,
-        interactive: false,
-      }).catch((err) => console.warn('[gallery] card mount failed', err));
-    }
-  </script>
 </body>
 </html>
