@@ -1033,16 +1033,18 @@ function applyFaceAccessory(mat, spec, p, t, loadTex) {
   if (slot === 'eye_occlusion') {
     // Dark ring under the lid that sells socket depth.
     mat.color.setRGB(0.02, 0.015, 0.01);
-    mat.transparent = true;
-    mat.opacity = 0.4;
     mat.roughness = 0.8;
-    mat.depthWrite = false;
-    // Force single-sided. glTF imports default this mesh as DoubleSide, which
-    // causes visible darkening when the upper lid folds back on itself during
-    // a blink — the folded region renders twice (front + back face), doubling
-    // the alpha and producing a horizontal dark streak at half-close. With
-    // FrontSide the folded backfaces are culled and the fold is invisible.
     mat.side = THREE.FrontSide;
+    // Blink fold fix: the MH occlusion skirt folds onto itself mid-blink so
+    // two front-facing layers of the same material cover the same pixels.
+    // With standard alpha blend (opacity=0.4) the two layers compound to
+    // ~0.64, producing a horizontal dark streak at half-close. Swap to alpha
+    // hashing + depthWrite so depth-test picks a single frontmost fragment
+    // per pixel — no compounding. opacity = hashed probability.
+    mat.transparent = false;
+    mat.alphaHash = true;
+    mat.opacity = 0.45;
+    mat.depthWrite = true;
   }
   if (slot === 'cartilage') {
     mat.roughness = 0.6;

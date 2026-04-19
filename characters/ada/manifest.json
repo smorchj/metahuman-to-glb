@@ -29,7 +29,7 @@
     "04_webview_build": {
       "status": "done",
       "started_at": "2026-04-18T14:38:05Z",
-      "completed_at": "2026-04-19T07:37:43Z",
+      "completed_at": "2026-04-19T07:41:39Z",
       "output_dir": "../../docs/characters/",
       "errors": []
     }
