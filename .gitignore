@@ -4,6 +4,21 @@ characters/*/01-fbx/
 characters/*/02-blend/
 characters/*/03-glb/
 
+# Contributors running the pipeline on their own MetaHumans: ignore any
+# character folder that isn't one of the demo characters shipped in this repo.
+# Add your own id to the allowlist locally if you want to track it in a fork.
+characters/*
+!characters/_shared/
+!characters/_template/
+!characters/ada/
+!characters/taro/
+
+# Stage 04 gallery output — same allowlist. A contributor's local viewer
+# still builds and renders fine; it just stays out of git.
+docs/characters/*
+!docs/characters/ada/
+!docs/characters/taro/
+
 # Python / tooling noise
 __pycache__/
 *.pyc
