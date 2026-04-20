@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Meeting from Hell — fake enthusiasm or else</title>
+  <link rel="stylesheet" href="style.css?v=20260420T181818Z" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three":           "https://unpkg.com/three@0.170.0/build/three.module.js",
+      "three/addons/":   "https://unpkg.com/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="stage">
+    <!-- 3D viewer mounts here -->
+    <div id="viewer"></div>
+
+    <!-- HUD overlay -->
+    <div id="hud">
+      <div id="round-pill">Round <span id="round-n">—</span> / <span id="round-total">—</span></div>
+      <div id="salary">
+        <div class="salary-label">Salary</div>
+        <div class="salary-amount">$<span id="salary-amount">50,000</span></div>
+        <div class="salary-delta" id="salary-delta"></div>
+      </div>
+    </div>
+
+    <!-- Boss speech bubble -->
+    <div id="bubble" class="hidden">
+      <div class="bubble-name">MARGARET <span class="bubble-role">· Director of Employee Engagement</span></div>
+      <div id="bubble-text"></div>
+    </div>
+
+    <!-- Enthusiasm meter (live during reaction window) -->
+    <div id="enthusiasm" class="hidden">
+      <div class="meter-label">Enthusiasm</div>
+      <div class="meter-track"><div class="meter-fill" id="meter-fill"></div></div>
+      <div class="meter-timer" id="meter-timer">5.0s</div>
+    </div>
+
+    <!-- Start / settings / end screens -->
+    <div id="splash" class="screen">
+      <h1>Meeting from Hell</h1>
+      <p class="tagline">A corporate check-in you cannot escape. Fake enthusiasm. Keep your job. Cash your raise.</p>
+      <div class="splash-actions">
+        <button id="btn-start" class="primary">Start the meeting</button>
+        <button id="btn-settings">Settings</button>
+      </div>
+      <p class="note">Needs camera + microphone access. Your face drives the game. Your mic powers Margaret's voice and audio-driven lipsync.</p>
+    </div>
+
+    <div id="settings" class="screen hidden">
+      <h2>Settings</h2>
+
+      <div class="field">
+        <label>Boss character</label>
+        <select id="cfg-character">
+          <option value="ada">ada</option>
+          <option value="taro">taro</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>LLM backend</label>
+        <select id="cfg-backend">
+          <option value="chrome">Chrome built-in (zero install, Chrome 127+)</option>
+          <option value="groq" selected>Groq cloud (free, needs API key)</option>
+          <option value="webllm">WebLLM (~1.5 GB first-load, then offline) — stub</option>
+          <option value="ollama">Ollama (local http://localhost:11434) — stub</option>
+          <option value="openai">Custom OpenAI-compatible URL</option>
+        </select>
+      </div>
+
+      <div class="field" data-for="groq">
+        <label>Groq API key</label>
+        <input id="cfg-groq-key" type="password" placeholder="gsk_..." autocomplete="off" />
+        <p class="hint">Sign up at <a href="https://console.groq.com" target="_blank" rel="noopener">console.groq.com</a> — free tier is plenty.</p>
+      </div>
+
+      <div class="field" data-for="groq,openai,ollama">
+        <label>Model</label>
+        <input id="cfg-model" type="text" placeholder="gemma2-9b-it" />
+      </div>
+
+      <div class="field" data-for="openai">
+        <label>API URL</label>
+        <input id="cfg-url" type="text" placeholder="https://api.openai.com/v1/chat/completions" />
+      </div>
+
+      <div class="field" data-for="openai">
+        <label>API key (optional)</label>
+        <input id="cfg-api-key" type="password" autocomplete="off" />
+      </div>
+
+      <div class="field">
+        <label>Rounds</label>
+        <input id="cfg-rounds" type="number" value="5" min="1" max="20" />
+      </div>
+
+      <div class="settings-actions">
+        <button id="btn-settings-save" class="primary">Save</button>
+        <button id="btn-settings-cancel">Cancel</button>
+      </div>
+    </div>
+
+    <div id="endscreen" class="screen hidden">
+      <h2 id="end-title">Meeting adjourned</h2>
+      <div class="end-salary">
+        Final salary: <span>$<span id="end-salary">50,000</span></span>
+      </div>
+      <div class="end-delta" id="end-delta"></div>
+      <p id="end-blurb"></p>
+      <div class="end-actions">
+        <button id="btn-again" class="primary">Another one</button>
+        <button id="btn-home">Back to splash</button>
+      </div>
+    </div>
+
+    <div id="status-line"></div>
+  </div>
+
+  <script type="module" src="game.js?v=20260420T181818Z"></script>
+</body>
+</html>
