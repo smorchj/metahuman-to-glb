@@ -5,36 +5,75 @@
 //   - swappable LLM backends (Chrome built-in / Groq / WebLLM / Ollama)
 //   - Web Speech API (boss dialogue audio)
 
-import { mount as mountViewer } from 'https://smorchj.github.io/metahuman-to-glb/assets/viewer.js';
+import {
+  mount as mountViewer,
+  startLiveCapture,
+} from 'https://smorchj.github.io/metahuman-to-glb/assets/viewer.js';
 
 // ---------------- constants ----------------
 const UPSTREAM = 'https://smorchj.github.io/metahuman-to-glb';
-const MEDIAPIPE_BUNDLE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm';
-const MEDIAPIPE_WASM   = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
-const FACE_MODEL       = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+// MediaPipe / model URLs / CAPTURE_CALIBRATION all live in upstream
+// metahuman-to-glb viewer.js. We never copy them here — we call
+// startLiveCapture from upstream and trust its internals. When upstream
+// tunes calibration or switches models, this game inherits it for free.
 
 const STARTING_SALARY = 50_000;
-const REACTION_WINDOW_MS = 5_000;
+// Maximum silence Margaret tolerates before interrupting the employee.
+// If the employee STOPS TALKING earlier (jawOpen drops below threshold
+// for SILENCE_END_MS continuously), Margaret responds immediately —
+// no interrupt, just a reaction. If they keep talking past MAX_WAIT_MS,
+// she interrupts and we measure whether they yield.
+const MAX_WAIT_MS      = 20_000;
+const SILENCE_END_MS   =  1_800;
+const TALKING_JAW_MIN  =  0.12;   // jawOpen above this == "currently talking"
+const YIELD_GRACE_MS   =  1_500;
+// When we do interrupt, pick one of these Margaret-isms at random.
+const INTERRUPT_PHRASES = [
+  "Sorry — just to touch base on one thing —",
+  "Wait — if I can just jump in here —",
+  "Actually, let me touch base on that —",
+  "If I could pause you there for a moment —",
+  "Quick sidebar —",
+  "Before you continue — just a thought —",
+  "Let me just align on one thing with you —",
+  "Sorry to cut in, but —",
+  "Circling back for a second — touch base on this —",
+  "Right, and if we can just step back there —",
+];
+
 const STORAGE_KEY = 'mh_meeting_game_v1';
 
-const SYSTEM_PROMPT = `You are MARGARET, a painfully earnest middle-manager running a weekly employee check-in. You genuinely believe every corporate buzzword you say. Topics: KPIs, synergies, growth mindset, stretch goals, OKRs, "bringing your whole self," psychological safety, mandatory wellness workshops, Q3 pivots, culture deck.
+const SYSTEM_PROMPT = `You ARE Margaret, a painfully earnest middle-manager holding a 1-on-1 check-in with your direct report. Your favourite phrase, by far, is "TOUCH BASE". You say it constantly — at the start of most questions, as the framing for every agenda item. You also love: KPIs, synergies, growth mindset, stretch goals, OKRs, psychological safety, bringing your whole self, Q3 pivots, wellness workshops, culture deck, stakeholder alignment, quarterly deliverables.
 
-Always output STRICT JSON, no code fences, no preamble. Schema:
-{
-  "topic": "<short label, 3-6 words>",
-  "dialogue": "<Margaret's spoken delivery: 2-3 sentences, 40-80 words. Casual, peppy, uses at least one real corporate buzzword. No stage directions.>",
-  "required_expression": "<one of: enthusiastic, thoughtful, engaged, excited, concerned-but-professional>"
-}`;
+ABSOLUTE RULES:
+1. Speak in FIRST PERSON, as Margaret. You are the character, not a narrator.
+2. Output ONLY the words Margaret says out loud. Nothing else.
+3. DO NOT describe her actions, facial expressions, tone, posture, or inner state. Forbidden words and patterns include: "smiles", "her eyes light up", "leans forward", "warmly", "*action*", "[action]", "nods", "(pause)", "she says", "Margaret says".
+4. DO NOT use asterisks, brackets, parentheses, or stage directions of any kind.
+5. Every turn you ask ONE pointed question your employee must answer. 10–22 words. Use a buzzword. Most questions (at least 2 out of 3) MUST contain the phrase "touch base" — as a verb, a noun, or both.
 
-const FOLLOWUP_PROMPT = `Previous topic: {topic}
-Player's enthusiasm during reaction (0-1): {score}
+Examples of correct output (nothing around them):
+Just wanted to touch base on how our Q3 KPIs are resonating with you?
+Let's touch base real quick on whether you're bringing your whole self to OKR review?
+Can we touch base about psychological safety — what does it mean to you, honestly?
+Circling back to touch base — how excited are we about mandatory Thursday mindfulness?
+Before we move on, can I touch base on your stretch goals for the quarter?`;
 
-Respond AS MARGARET in ONE sentence (max 25 words) based on what you just detected:
-- High enthusiasm (>0.6): warm validation, maybe hint at a "growth opportunity"
-- Mid (0.35-0.6): mild concern disguised as concern, something like "I appreciate your measured response"
-- Low (<0.35): passive-aggressive worry, "noting this for our next one-on-one"
+const TOPIC_USER_PROMPT = `Ask your employee a new question. Use a corporate buzzword. Do NOT repeat these topics: {past}`;
 
-Output STRICT JSON: {"dialogue": "..."}`;
+const FOLLOWUP_USER_PROMPT = `You just had a 1-on-1 exchange with your employee. What you observed:
+- Body language / enthusiasm: {vibe}
+- What actually happened: {yield_note}
+
+React in ONE short sentence as Margaret. Do NOT ask a follow-up question — just acknowledge what you observed, in character. Pick a tone from:
+
+- They yielded immediately when you cut in → glowing gratitude for "active listening" and "respecting everyone's time".
+- They kept talking over your interruption → be POLITELY OFFENDED and gaslight them. Imply THEY were the one who interrupted. "Excuse me, I wasn't quite finished." / "Let's practice active listening here." / "I'd love if we could respect each other's speaking time." NEVER acknowledge that you were the one who actually interrupted first.
+- They said nothing and just smiled silently → acknowledge the silence with passive-aggressive corporate concern. "I see we're taking a moment to reflect." / "Your silence is saying a lot." / "Are we… processing this internally?" You find it deeply unsettling but cover with buzzwords.
+- They gave a short answer and trailed off → faint condescension. "Hmm. I was hoping we'd get a bit more colour on that."
+- They actually answered at some length → treat them well if they also looked enthusiastic; if lukewarm, offer "I appreciate that you're processing this deeply" energy.
+
+Never use the words "yield", "interrupt", "score", "enthusiasm", "vibe", or any number.`;
 
 // ---------------- settings ----------------
 const defaultSettings = {
@@ -108,22 +147,36 @@ class OpenAICompatibleClient {
   dispose() {}
 }
 
+// Module-level cache so repeated Start clicks in the same tab reuse the
+// initialised engine instead of re-loading 1.5GB into GPU memory.
+let _cachedWebllm = null;
+
 class WebLLMClient {
   async init(settings, onProgress) {
     if (!navigator.gpu) {
       throw new Error('WebGPU not available. Need Chrome/Edge/Arc with WebGPU support.');
     }
-    const webllm = await import(/* @vite-ignore */ 'https://esm.run/@mlc-ai/web-llm');
-    const modelId = settings.model && settings.model.includes('MLC')
+    this.webllm = await import(/* @vite-ignore */ 'https://esm.run/@mlc-ai/web-llm');
+    // Default: Llama-3.2-3B. ~1.8GB, smart enough to ask pointed
+    // corporate questions in character and react contextually to the
+    // previous exchange. 0.5B / 1B models tend to repeat themselves
+    // and miss the "ask a question" framing. 3B is the sweet spot.
+    this.modelId = settings.model && settings.model.includes('MLC')
       ? settings.model
       : 'Llama-3.2-3B-Instruct-q4f16_1-MLC';
-    this.engine = await webllm.CreateMLCEngine(modelId, {
+    this.onProgress = onProgress;
+    if (_cachedWebllm && _cachedWebllm.modelId === this.modelId && _cachedWebllm.engine) {
+      this.engine = _cachedWebllm.engine;
+      return;
+    }
+    this.engine = await this.webllm.CreateMLCEngine(this.modelId, {
       initProgressCallback: (report) => {
         if (onProgress) onProgress(report.text, report.progress ?? 0);
       },
     });
+    _cachedWebllm = { modelId: this.modelId, engine: this.engine };
   }
-  async complete(system, user) {
+  async _doComplete(system, user) {
     const reply = await this.engine.chat.completions.create({
       messages: [
         { role: 'system', content: system },
@@ -133,6 +186,26 @@ class WebLLMClient {
       max_tokens: 400,
     });
     return reply.choices?.[0]?.message?.content || '';
+  }
+  async complete(system, user) {
+    try {
+      return await this._doComplete(system, user);
+    } catch (e) {
+      const msg = (e && (e.message || String(e))) || '';
+      // "A valid external Instance reference no longer exists" = WebGPU
+      // adapter got invalidated. Re-create the engine once and retry.
+      if (/Instance reference|adapter|device lost/i.test(msg)) {
+        console.warn('[webllm] WebGPU instance invalidated; re-initialising engine');
+        try { this.engine?.unload?.(); } catch {}
+        this.engine = await this.webllm.CreateMLCEngine(this.modelId, {
+          initProgressCallback: (report) => {
+            if (this.onProgress) this.onProgress(report.text, report.progress ?? 0);
+          },
+        });
+        return await this._doComplete(system, user);
+      }
+      throw e;
+    }
   }
   dispose() { try { this.engine?.unload?.(); } catch {} }
 }
@@ -212,79 +285,128 @@ async function speak(text, voice) {
   });
 }
 
-// ---------------- face capture ----------------
-let landmarker = null;
-let videoEl = null;
+// ---------------- face capture: delegate to upstream startLiveCapture ----------------
+// All face-cap logic (MediaPipe init, camera, calibration, audio visemes,
+// blendshape driving) lives in the upstream viewer module. We supply the
+// morphMeshes from the mounted character and a setInfluence shim that
+// also tees values into `latestInfluence` so the round loop can read
+// calibrated smile scores for salary scoring.
+const morphMeshes = []; // [{ dict, influences }], filled post-mount
+const latestInfluence = Object.create(null);
+const setInfluence = (keyName, v) => {
+  for (const { dict, influences } of morphMeshes) {
+    const idx = dict[keyName];
+    if (idx !== undefined) influences[idx] = v;
+  }
+  latestInfluence[keyName] = v;
+};
 
-async function initFaceCapture(statusFn) {
-  statusFn('loading MediaPipe…');
-  const vision = await import(/* @vite-ignore */ MEDIAPIPE_BUNDLE);
-  const { FaceLandmarker, FilesetResolver } = vision;
-  const fileset = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM);
-  landmarker = await FaceLandmarker.createFromOptions(fileset, {
-    baseOptions: { modelAssetPath: FACE_MODEL, delegate: 'GPU' },
-    runningMode: 'VIDEO',
-    numFaces: 1,
-    outputFaceBlendshapes: true,
-    outputFacialTransformationMatrixes: false,
-    minFaceDetectionConfidence: 0.2,
-    minFacePresenceConfidence: 0.2,
-    minTrackingConfidence: 0.2,
-  });
-
-  statusFn('opening camera…');
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
-    audio: false,
-  });
-  videoEl = document.createElement('video');
-  videoEl.autoplay = true; videoEl.playsInline = true; videoEl.muted = true;
-  videoEl.srcObject = stream;
-  videoEl.style.cssText = 'position:fixed;bottom:12px;right:12px;width:180px;border:1px solid #2a2f3a;border-radius:8px;transform:scaleX(-1);z-index:50;background:#000;pointer-events:none';
-  document.body.appendChild(videoEl);
-  await new Promise((resolve) => videoEl.addEventListener('loadedmetadata', resolve, { once: true }));
-  await videoEl.play();
-  statusFn('tracking');
+async function initFaceCapture(container, statusFn) {
+  const statusEl = { set textContent(msg) { statusFn(msg); } };
+  return await startLiveCapture({ container, morphMeshes, setInfluence, statusEl });
 }
 
-function readBlendshapes() {
-  if (!landmarker || !videoEl || videoEl.readyState < 2) return null;
-  const res = landmarker.detectForVideo(videoEl, performance.now());
-  const cats = res?.faceBlendshapes?.[0]?.categories;
-  if (!cats) return null;
-  const map = Object.create(null);
-  for (const c of cats) map[c.categoryName] = c.score;
-  return map;
+function scoreFromLatest() {
+  const smile = ((latestInfluence.mouthSmileLeft || 0) + (latestInfluence.mouthSmileRight || 0)) / 2;
+  const brow  = latestInfluence.browInnerUp || 0;
+  const frown = ((latestInfluence.mouthFrownLeft || 0) + (latestInfluence.mouthFrownRight || 0)) / 2;
+  return Math.max(0, Math.min(1, smile + 0.2 * brow - 0.6 * frown));
 }
 
-function scoreEnthusiasm(bs) {
-  if (!bs) return 0;
-  const g = (k) => bs[k] || 0;
-  const smile = (g('mouthSmileLeft') + g('mouthSmileRight')) / 2;
-  const cheek = (g('cheekSquintLeft') + g('cheekSquintRight')) / 2;
-  const brow  = g('browInnerUp');
-  const wide  = Math.max(0, (g('eyeWideLeft') + g('eyeWideRight')) / 2);
-  const frown = (g('mouthFrownLeft') + g('mouthFrownRight')) / 2;
-  const down  = (g('browDownLeft') + g('browDownRight')) / 2;
-  const raw = 0.50 * smile + 0.20 * cheek + 0.15 * brow + 0.15 * wide - 0.40 * frown - 0.30 * down;
-  return Math.max(0, Math.min(1, raw));
+function scoreToVibe(score) {
+  if (score >= 0.70) return 'giddy';
+  if (score >= 0.50) return 'enthusiastic';
+  if (score >= 0.30) return 'politely engaged';
+  if (score >= 0.15) return 'lukewarm';
+  return 'visibly checked out';
 }
 
-async function collectReactionWindow(onTick) {
+// Collect reaction samples while Margaret waits for the employee to answer.
+//
+// Two ways the window ends:
+//   (a) EARLY: employee's jawOpen has been below TALKING_JAW_MIN for
+//       SILENCE_END_MS continuously → they're done (or silent-smiling) →
+//       Margaret responds immediately, NO interrupt.
+//   (b) INTERRUPT: employee is STILL talking at MAX_WAIT_MS → Margaret
+//       barges in with a canned line. We then measure jawOpen for
+//       YIELD_GRACE_MS to see if they yield.
+//
+// Also tracks total talking time so scoring can reward actually speaking
+// over silent-smiling.
+async function collectReactionWindow(onTick, voice) {
   const samples = [];
+  const jawSamples = [];
+  let lastTalkingAt = -1;        // performance.now() of most recent "talking" frame
+  let firstTalkingAt = -1;        // first time they opened their mouth
+  let talkingAccumMs = 0;         // cumulative "talking" time
+  let interruptFired = false;
+  let baselineJaw = 0;
+  let yielded = null;
+  let endReason = 'max';          // 'silence' | 'max'
+
   const start = performance.now();
-  return new Promise((resolve) => {
+  const preJawBuffer = [];
+
+  await new Promise((resolve) => {
+    let lastTickAt = start;
     const tick = () => {
-      const elapsed = performance.now() - start;
-      if (elapsed >= REACTION_WINDOW_MS) return resolve(samples);
-      const bs = readBlendshapes();
-      const score = scoreEnthusiasm(bs);
+      const now = performance.now();
+      const elapsed = now - start;
+      const dt = now - lastTickAt;
+      lastTickAt = now;
+
+      const score = scoreFromLatest();
       samples.push(score);
-      onTick(score, elapsed / REACTION_WINDOW_MS);
+      const jaw = latestInfluence.jawOpen || 0;
+      jawSamples.push(jaw);
+      onTick(score, Math.min(1, elapsed / MAX_WAIT_MS));
+
+      const isTalking = jaw > TALKING_JAW_MIN;
+      if (isTalking) {
+        talkingAccumMs += dt;
+        if (firstTalkingAt < 0) firstTalkingAt = now;
+        lastTalkingAt = now;
+      }
+
+      // (a) Early end: employee has been quiet for SILENCE_END_MS.
+      // Grace of 500ms at the start so we don't fire the instant the
+      // question ends (they need time to draw breath).
+      const silentSince = lastTalkingAt > 0 ? (now - lastTalkingAt) : elapsed;
+      if (elapsed > 500 && silentSince >= SILENCE_END_MS && !interruptFired) {
+        endReason = 'silence';
+        return resolve();
+      }
+
+      if (!interruptFired) {
+        preJawBuffer.push(jaw);
+        if (preJawBuffer.length > 30) preJawBuffer.shift();
+      }
+
+      // (b) Max time reached AND still talking → Margaret interrupts.
+      if (!interruptFired && elapsed >= MAX_WAIT_MS) {
+        interruptFired = true;
+        endReason = 'max';
+        baselineJaw = preJawBuffer.reduce((a, b) => a + b, 0) / (preJawBuffer.length || 1);
+        const phrase = INTERRUPT_PHRASES[Math.floor(Math.random() * INTERRUPT_PHRASES.length)];
+        showBubble(phrase);
+        speak(phrase, voice); // fire-and-forget
+        setTimeout(() => {
+          const postJaw = latestInfluence.jawOpen || 0;
+          yielded = (baselineJaw - postJaw) > 0.08 || postJaw < 0.08;
+          console.log('[game][interrupt] baseline=%s post=%s → yielded=%s', baselineJaw.toFixed(2), postJaw.toFixed(2), yielded);
+        }, YIELD_GRACE_MS);
+        // Let the grace window play out before resolving.
+        setTimeout(() => resolve(), YIELD_GRACE_MS + 200);
+        return;
+      }
+
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   });
+
+  const talkingSec = talkingAccumMs / 1000;
+  return { samples, yielded, interrupted: interruptFired, endReason, talkingSec };
 }
 
 function summarise(samples) {
@@ -312,9 +434,11 @@ const state = {
 function setStatus(msg) { $('#status-line').textContent = msg; }
 
 function showScreen(name) {
+  // name === null  → hide every screen (we're in-game)
+  // name === <id>  → show that screen, hide the rest
   for (const id of ['splash', 'settings', 'endscreen']) {
     const el = document.getElementById(id);
-    if (el) el.classList.toggle('hidden', id !== name && name !== null);
+    if (el) el.classList.toggle('hidden', id !== name);
   }
   $('#hud').classList.toggle('hidden', name !== null);
   $('#bubble').classList.add('hidden');
@@ -341,7 +465,7 @@ function showMeter() { $('#enthusiasm').classList.remove('hidden'); }
 function hideMeter() { $('#enthusiasm').classList.add('hidden'); }
 function updateMeter(score, progress) {
   $('#meter-fill').style.width = Math.round(score * 100) + '%';
-  const remaining = REACTION_WINDOW_MS / 1000 * (1 - progress);
+  const remaining = MAX_WAIT_MS / 1000 * (1 - progress);
   $('#meter-timer').textContent = remaining.toFixed(1) + 's';
 }
 
@@ -386,12 +510,22 @@ async function runGame() {
   setStatus('loading character…');
   try {
     const cid = state.settings.character;
-    await mountViewer($('#viewer'), {
+    const handle = await mountViewer($('#viewer'), {
       glbUrl: `${UPSTREAM}/characters/${cid}/${cid}.glb`,
       mappingUrl: `${UPSTREAM}/characters/${cid}/mh_materials.json`,
       autoRotate: false,
       interactive: false,
     });
+    // Collect every mesh that has morph targets so we can drive
+    // blendshapes live from the player's face. Same shape as upstream
+    // viewer's internal `morphMeshes`.
+    morphMeshes.length = 0;
+    handle.gltf.scene.traverse((obj) => {
+      if ((obj.isMesh || obj.isSkinnedMesh) && obj.morphTargetDictionary && obj.morphTargetInfluences) {
+        morphMeshes.push({ dict: obj.morphTargetDictionary, influences: obj.morphTargetInfluences });
+      }
+    });
+    console.log(`[game] character loaded with ${morphMeshes.length} morph meshes`);
   } catch (err) {
     console.error('[game] character mount failed', err);
     showScreen('splash');
@@ -402,6 +536,12 @@ async function runGame() {
   let voice = null, client = null;
   try {
     voice = await pickVoice();
+    // Order matters: initialise the camera + MediaPipe FIRST so the
+    // browser has settled on its GPU resource allocation before WebLLM
+    // grabs its WebGPU adapter. Reverse order causes the WebLLM adapter
+    // to be invalidated once webcam starts on Windows.
+    setStatus('initialising face capture…');
+    await initFaceCapture($('#viewer'), setStatus);
     setStatus('initialising LLM…');
     if (state.settings.backend === 'webllm') showLoadingOverlay('Loading model…', 'First visit downloads ~1.5 GB. Cached after that.');
     client = await buildClient(state.settings, (msg, pct) => {
@@ -412,8 +552,6 @@ async function runGame() {
       }
     });
     hideLoadingOverlay();
-    setStatus('initialising face capture…');
-    await initFaceCapture(setStatus);
   } catch (err) {
     console.error('[game] startup failed', err);
     hideLoadingOverlay();
@@ -425,66 +563,145 @@ async function runGame() {
   state.salary = STARTING_SALARY;
   state.round = 0;
   state.history = [];
-  state.totalRounds = state.settings.rounds;
-  $('#round-total').textContent = state.totalRounds;
+  $('#round-total').textContent = '∞';
   updateSalary(0);
   setStatus('');
 
+  // Strip anything that looks like labels, quotes, JSON, or stage-direction
+  // narration that a small LLM accidentally spits out even when told not to.
+  // Leave a plain first-person sentence that Margaret would actually speak.
+  const cleanSentence = (raw) => {
+    if (!raw) return '';
+    let t = raw.trim();
+    // Drop code fences.
+    t = t.replace(/```[a-z]*\s*|\s*```/gi, '');
+    // If it's JSON, grab any top-level dialogue/text field.
+    if (t.startsWith('{')) {
+      try {
+        const j = JSON.parse(t);
+        t = j.dialogue || j.text || j.message || Object.values(j).find((v) => typeof v === 'string') || t;
+      } catch {}
+    }
+    // Strip stage directions: *her eyes light up*, [warmly], (pauses).
+    t = t.replace(/\*[^*]*\*/g, ' ');       // *...*
+    t = t.replace(/\[[^\]]*\]/g, ' ');      // [...]
+    t = t.replace(/\([^)]*\)/g, ' ');       // (...)
+    // Strip emoji action markers a lot of small models emit.
+    t = t.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, ' ');
+    // Strip leading role labels like `Margaret:` or `MARGARET -`.
+    t = t.replace(/^\s*(margaret|boss|manager|hr|she|her)\s*[:\-—]\s*/i, '');
+    // Strip wrapping quotes.
+    t = t.replace(/^["'`]+|["'`]+$/g, '').trim();
+    // Collapse whitespace.
+    t = t.replace(/\s+/g, ' ').trim();
+
+    // If the sentence is clearly third-person narration (leads with
+    // "Margaret/She + verb"), drop it and try the next sentence.
+    const narratorLead = /^(margaret|she|he|her|his)\b/i;
+    if (narratorLead.test(t)) {
+      // Try to find a first-person-ish continuation after the next period.
+      const rest = t.replace(/^[^.!?]*[.!?]\s*/, '');
+      if (rest && !narratorLead.test(rest)) t = rest;
+    }
+
+    // First sentence only if it ran long.
+    if (t.length > 260) {
+      const m = t.match(/[^.!?]*[.!?]/);
+      if (m) t = m[0].trim();
+    }
+    return t;
+  };
+
   let fatalError = null;
-  for (let i = 1; i <= state.totalRounds; i++) {
+  let completedRounds = 0;
+  let i = 0;
+  while (true) {
+    i += 1;
     state.round = i;
     $('#round-n').textContent = i;
 
-    let topic;
+    let topicLine;
     try {
-      const raw = await client.complete(
-        SYSTEM_PROMPT,
-        `Generate round ${i} of ${state.totalRounds}. Pick a topic we have NOT covered: ${state.history.map(h => h.topic).join('; ') || '(none yet)'}`,
-      );
-      topic = extractJson(raw);
+      const past = state.history.slice(-8).map((h) => h.topic).join('; ') || '(none yet)';
+      const raw = await client.complete(SYSTEM_PROMPT, TOPIC_USER_PROMPT.replace('{past}', past));
+      topicLine = cleanSentence(raw);
+      if (!topicLine) throw new Error('empty topic from LLM');
     } catch (err) {
       console.error('[game] LLM topic gen failed', err);
       fatalError = err?.message || String(err);
       break;
     }
 
-    showBubble(topic.dialogue);
-    await speak(topic.dialogue, voice);
+    showBubble(topicLine);
+    await speak(topicLine, voice);
 
     showMeter();
-    const samples = await collectReactionWindow((score, progress) => updateMeter(score, progress));
+    const { samples, yielded, interrupted, talkingSec } = await collectReactionWindow(
+      (score, progress) => updateMeter(score, progress),
+      voice,
+    );
     hideMeter();
 
     const s = summarise(samples);
-    const multiplier = 4500 + i * 500; // rounds get higher stakes
-    const delta = multiplier * (s.p50 - 0.35);
+    const multiplier = 4500 + Math.min(i, 10) * 500;
+    // Base: enthusiasm from smile (0..1 → −0.35..+0.65 scaled by multiplier).
+    let delta = multiplier * (s.p50 - 0.35);
+    // Talking bonus: reward actually opening your mouth and speaking. Cap
+    // at 4 seconds of cumulative talk time.
+    const talkingBonus = multiplier * 0.3 * Math.min(1, talkingSec / 4);
+    delta += talkingBonus;
+    // Yield modifiers (only when she actually interrupted).
+    if (yielded === true)  delta += multiplier * 0.5;   // bonus for shutting up
+    if (yielded === false) delta -= multiplier * 0.7;   // penalty for "interrupting her"
     updateSalary(delta);
-    state.history.push({ topic: topic.topic, score: s.p50, delta });
+    state.history.push({ topic: topicLine.split(/\s+/).slice(0, 6).join(' '), score: s.p50 });
 
-    // Follow-up reaction.
+    // Build the talk/yield context for the follow-up LLM call.
+    let talkNote;
+    if (interrupted) {
+      talkNote = yielded === true
+        ? 'they were talking and then went IMMEDIATELY silent when you cut in — perfect deference'
+        : 'they RUDELY kept talking right over you when you started speaking — in their head, THEY were the one being interrupted';
+    } else if (talkingSec < 0.6) {
+      // Never really opened their mouth — just silent-smiling.
+      talkNote = s.p50 > 0.3
+        ? 'they said absolutely nothing and just sat there smiling silently at you — creepy vibes'
+        : 'they said absolutely nothing and just stared blankly at you — no engagement whatsoever';
+    } else if (talkingSec < 2.5) {
+      talkNote = 'they gave a very brief answer and trailed off almost immediately';
+    } else {
+      talkNote = `they actually answered at some length (${talkingSec.toFixed(1)}s) before stopping on their own`;
+    }
+
     try {
       const raw = await client.complete(
         SYSTEM_PROMPT,
-        FOLLOWUP_PROMPT.replace('{topic}', topic.topic).replace('{score}', s.p50.toFixed(2)),
+        FOLLOWUP_USER_PROMPT
+          .replace('{vibe}', scoreToVibe(s.p50))
+          .replace('{yield_note}', talkNote),
       );
-      const followup = extractJson(raw);
-      showBubble(followup.dialogue);
-      await speak(followup.dialogue, voice);
+      const followup = cleanSentence(raw);
+      if (followup) {
+        showBubble(followup);
+        await speak(followup, voice);
+      }
     } catch (err) {
       console.warn('[game] follow-up failed, skipping', err);
     }
     hideBubble();
+    completedRounds += 1;
     await new Promise((r) => setTimeout(r, 600));
   }
 
-  // If we never completed a round, don't pretend the meeting happened —
-  // show the actual error on splash so the user can fix their config.
-  if (state.history.length === 0) {
+  // Only path out of the while(true) is break → fatalError. Show banner.
+  if (completedRounds === 0) {
     showScreen('splash');
-    showFatalBanner(fatalError || 'Meeting ended before the first round. Check your settings.');
-    return;
+    showFatalBanner(fatalError || 'Meeting couldn\'t start. Check the console.');
+  } else {
+    // We ran some rounds then errored — go back to splash but keep the
+    // error around. Salary stays in HUD for reference.
+    showFatalBanner('Meeting cut short: ' + (fatalError || 'unknown error'));
   }
-  endGame();
 }
 
 function showFatalBanner(msg) {
@@ -551,19 +768,6 @@ function hideLoadingOverlay() {
   if (ov) ov.style.display = 'none';
 }
 
-function endGame() {
-  const delta = state.salary - STARTING_SALARY;
-  $('#end-salary').textContent = state.salary.toLocaleString();
-  $('#end-delta').textContent = (delta >= 0 ? '+ $' : '− $') + Math.abs(delta).toLocaleString();
-  $('#end-delta').className = 'end-delta ' + (delta >= 0 ? 'up' : 'down');
-  $('#end-blurb').textContent =
-    delta > 15000 ? "Margaret called you 'a real culture carrier'. You're doomed." :
-    delta > 0     ? 'You cashed a raise. You also cashed a little of your soul.' :
-    delta > -8000 ? 'Margaret has scheduled a follow-up one-on-one. No further comment.' :
-                    'HR has been notified.';
-  showScreen('endscreen');
-}
-
 // ---------------- wiring ----------------
 document.addEventListener('DOMContentLoaded', () => {
   // Populate initial UI from settings.
@@ -574,8 +778,10 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#btn-settings-save').addEventListener('click', () => closeSettingsSaving());
   $('#btn-settings-cancel').addEventListener('click', () => showScreen('splash'));
   $('#cfg-backend').addEventListener('change', syncSettingsFields);
-  $('#btn-again').addEventListener('click', () => runGame());
-  $('#btn-home').addEventListener('click', () => showScreen('splash'));
+  // End-screen buttons removed (infinite rounds now) — leaving listener
+  // guards in case template still has the nodes.
+  const again = $('#btn-again'); if (again) again.addEventListener('click', () => runGame());
+  const home  = $('#btn-home');  if (home)  home.addEventListener('click', () => showScreen('splash'));
 
   // Voices may not be ready until an event fires.
   if ('speechSynthesis' in window) {

@@ -1,117 +1,49 @@
-# Meeting from Hell
+# Touch Base
 
-A browser game where a **locally-running LLM** is your middle-manager,
-and your **face** is the controller. Fake enthusiasm during absurd
-corporate check-ins. Your detected enthusiasm drives the character's
-reaction AND your in-game salary.
+> A corporate meeting sim about KPIs and synergies.
 
-> **Built on** the open-source [MetaHuman → GLB pipeline][mh-pipeline].
-> The game loads the pipeline's deployed viewer + characters over HTTPS
-> from GitHub Pages, so upstream improvements show up automatically —
-> no submodule, no duplicated assets.
+**Touch Base™** is the industry's most advanced solution for workplace engagement, featuring proprietary facial sentiment analysis and an AI-powered conversational 1-on-1 engine. Margaret is incredibly excited to touch base with you.
 
-[mh-pipeline]: https://github.com/smorchj/metahuman-to-glb
+**Touch Base™** You have been scheduled for a mandatory 1-on-1 with Margaret from Employee Engagement. Please come prepared to demonstrate authentic alignment with Q3 priorities. Attendance is tracked. Enthusiasm is measured.
 
-## Why this exists
+**Touch Base™** is the world's first on-device AI platform for workplace engagement optimization. By combining computer-vision-powered facial analytics with an advanced Corporate Dialogue Engine™, Touch Base enables frictionless, data-driven 1-on-1s at scale. Early internal reviews have been overwhelmingly positive.
 
-Every "watch Claude build a game from scratch" video hits the same wall:
-the AI can hammer out code, but the art is always cubes or bad
-AI-generated slop. **Flip that.** Ship Claude a quality rigged character
-on turn one and see what gameplay falls out.
+<p align="center">
+  <a href="https://smorchj.github.io/touch-base/">
+    <img src="https://img.shields.io/badge/TRY%20IT%20TODAY-touch--base-C084FC?style=for-the-badge&labelColor=0a0420&logo=github&logoColor=white" alt="try it today" />
+  </a>
+</p>
 
-What also falls out: a demo of **three bleeding-edge capabilities wired
-together in the browser**:
+## Privacy
 
-1. **Browser-hostable LLM** — Chrome's built-in Gemini Nano
-   (`LanguageModel` API) or WebLLM (`@mlc-ai/web-llm`) runs the boss's
-   dialogue without a server.
-2. **Face-rig as controller** — MediaPipe FaceLandmarker classifies the
-   player's enthusiasm in real time; the character mirrors it.
-3. **Audio-driven viseme lipsync** — the character's synthesized voice
-   drives its own mouth movement via FFT band analysis in the upstream
-   viewer.
+Everything runs locally in your browser. No exceptions.
 
-## Run it
+- **Your webcam feed** is analyzed on your GPU by MediaPipe's FaceLandmarker. It never leaves the device. No frames, no video, no blendshape output is transmitted anywhere.
+- **The LLM** (Llama-3.2-3B via WebLLM) runs locally once the weights are cached in your browser. Your prompts and Margaret's responses never hit a server.
+- **No analytics, no accounts, no logins.** If you record a demo, the file lands in your Downloads folder. Only you have it.
+
+The only outbound traffic is the one-time asset fetch on first load (three.js, MediaPipe model, WebLLM weights, character GLB) from their respective CDNs. After that, you can disconnect wifi and keep playing.
+
+## How it's built
+
+- Character from the [`metahuman-to-glb`](https://github.com/smorchj/metahuman-to-glb) pipeline (MetaHuman to web-ready GLB)
+- three.js renders
+- MediaPipe FaceLandmarker drives the 52 ARKit blendshapes from your webcam
+- WebLLM (default) / Chrome built-in / Groq / Ollama generates Margaret's dialogue
+- Web Speech API synthesizes her voice; upstream audio-viseme layer lipsyncs the character's mouth
+
+## Run locally
 
 ```bash
-# Build site/ from src/
 python build.py
-
-# Serve locally
-python -m http.server 8000 -d site
-# open http://localhost:8000/
+python -m http.server 8001 -d site
+# open http://localhost:8001/
 ```
 
-Game needs camera + microphone permission. Pick an LLM backend in
-Settings (Chrome built-in is the zero-install option; Groq free tier
-works everywhere else).
+## This is not a training tool
 
-## Dependencies on MetaHuman → GLB
-
-The game makes HTTPS requests to the deployed pipeline site:
-
-| Resource | URL |
-|---|---|
-| Viewer module | `https://smorchj.github.io/metahuman-to-glb/assets/viewer.js` |
-| Ada GLB | `https://smorchj.github.io/metahuman-to-glb/characters/ada/ada.glb` |
-| Ada material map | `https://smorchj.github.io/metahuman-to-glb/characters/ada/mh_materials.json` |
-| Taro GLB / map | `.../characters/taro/...` |
-
-These URLs can be overridden in `src/game.js` if you fork both projects
-together and want local-only serving.
-
-## LLM backends
-
-Ranked by demo-ability for a drive-by visitor:
-
-| Backend | First load | Requires | Story |
-|---|---|---|---|
-| **Chrome built-in** (`LanguageModel`) | 0 MB | Chrome/Edge w/ Prompt API | Zero install, fully private, instant. |
-| **Groq** hosted Gemma | 0 MB | User's free API key | Fast, reliable, needs sign-up. |
-| **WebLLM** | 1–3 GB one-time | WebGPU browser | Fully offline after first load. |
-| **Ollama** local | 0 MB (if installed) | User running Ollama | Privacy maximalists. |
-
-The common interface is a tiny `LLMClient` shape:
-
-```js
-const client = await getClient(settings);
-const text = await client.complete({
-  system:  "You are Margaret, middle-manager...",
-  user:    "Generate the next round topic...",
-  schema:  "json",
-});
-```
-
-See `src/game.js` → `buildClient()` for the adapters.
-
-## Face-capture scoring
-
-We sum MediaPipe blendshape influences from the reaction window:
-
-```
-enthusiasm = clamp(
-    0.50 * (smileL + smileR) / 2
-  + 0.20 * (cheekSquintL + cheekSquintR) / 2
-  + 0.15 * browInnerUp
-  + 0.15 * max(0, eyeWideL + eyeWideR) / 2
-  - 0.40 * (frownL + frownR) / 2
-  - 0.30 * (browDownL + browDownR) / 2
-  , 0, 1)
-```
-
-Salary delta per round = `round_multiplier * (enthusiasm_p50 − 0.35)`.
-
-## Round loop
-
-1. LLM generates `{ topic, dialogue, required_expression }`.
-2. SpeechSynthesis speaks `dialogue` aloud.
-3. Character audio-viseme layer (from upstream viewer) lipsyncs to the
-   synthesized voice automatically.
-4. Reaction window opens when TTS ends. Enthusiasm sampled at ~30 Hz.
-5. Score → salary delta. LLM generates a ≤1-sentence follow-up.
-6. Loop for `rounds` (default 5).
-7. Final screen: total salary change + an end-of-meeting blurb.
+If you're an HR director reading this and your first thought was "this would be great for our engagement workshops", just "touch grass". Touch Base is a satire of workplace monitoring, not an implementation of it. No employees were retained, evaluated, or psychologically conditioned in the making of this game. Deploying it in actual 1-on-1s is both missing the point and, depending on your jurisdiction, illegal.
 
 ## License
 
-MIT. PRs welcome.
+MIT.
