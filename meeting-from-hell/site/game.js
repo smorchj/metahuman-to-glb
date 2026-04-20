@@ -109,12 +109,35 @@ class OpenAICompatibleClient {
 }
 
 class WebLLMClient {
-  async init() {
-    throw new Error('WebLLM backend not yet wired in this MVP — use Groq or Chrome built-in for now.');
+  async init(settings, onProgress) {
+    if (!navigator.gpu) {
+      throw new Error('WebGPU not available. Need Chrome/Edge/Arc with WebGPU support.');
+    }
+    const webllm = await import(/* @vite-ignore */ 'https://esm.run/@mlc-ai/web-llm');
+    const modelId = settings.model && settings.model.includes('MLC')
+      ? settings.model
+      : 'Llama-3.2-3B-Instruct-q4f16_1-MLC';
+    this.engine = await webllm.CreateMLCEngine(modelId, {
+      initProgressCallback: (report) => {
+        if (onProgress) onProgress(report.text, report.progress ?? 0);
+      },
+    });
   }
+  async complete(system, user) {
+    const reply = await this.engine.chat.completions.create({
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+      temperature: 0.8,
+      max_tokens: 400,
+    });
+    return reply.choices?.[0]?.message?.content || '';
+  }
+  dispose() { try { this.engine?.unload?.(); } catch {} }
 }
 
-async function buildClient(settings) {
+async function buildClient(settings, onProgress) {
   let client;
   if (settings.backend === 'chrome') {
     client = new ChromeBuiltinClient();
@@ -143,7 +166,7 @@ async function buildClient(settings) {
   } else {
     throw new Error(`Unknown backend: ${settings.backend}`);
   }
-  await client.init(settings);
+  await client.init(settings, onProgress);
   return client;
 }
 
@@ -371,8 +394,8 @@ async function runGame() {
     });
   } catch (err) {
     console.error('[game] character mount failed', err);
-    setStatus('character mount failed: ' + (err?.message || err));
     showScreen('splash');
+    showFatalBanner('Character mount failed: ' + (err?.message || err));
     return;
   }
 
@@ -380,13 +403,22 @@ async function runGame() {
   try {
     voice = await pickVoice();
     setStatus('initialising LLM…');
-    client = await buildClient(state.settings);
+    if (state.settings.backend === 'webllm') showLoadingOverlay('Loading model…', 'First visit downloads ~1.5 GB. Cached after that.');
+    client = await buildClient(state.settings, (msg, pct) => {
+      if (state.settings.backend === 'webllm') {
+        updateLoadingOverlay(msg, pct);
+      } else {
+        setStatus(msg);
+      }
+    });
+    hideLoadingOverlay();
     setStatus('initialising face capture…');
     await initFaceCapture(setStatus);
   } catch (err) {
     console.error('[game] startup failed', err);
-    setStatus('startup failed: ' + (err?.message || err));
+    hideLoadingOverlay();
     showScreen('splash');
+    showFatalBanner('Startup failed: ' + (err?.message || err));
     return;
   }
 
@@ -398,6 +430,7 @@ async function runGame() {
   updateSalary(0);
   setStatus('');
 
+  let fatalError = null;
   for (let i = 1; i <= state.totalRounds; i++) {
     state.round = i;
     $('#round-n').textContent = i;
@@ -411,7 +444,7 @@ async function runGame() {
       topic = extractJson(raw);
     } catch (err) {
       console.error('[game] LLM topic gen failed', err);
-      setStatus('LLM failed: ' + (err?.message || err));
+      fatalError = err?.message || String(err);
       break;
     }
 
@@ -444,7 +477,78 @@ async function runGame() {
     await new Promise((r) => setTimeout(r, 600));
   }
 
+  // If we never completed a round, don't pretend the meeting happened —
+  // show the actual error on splash so the user can fix their config.
+  if (state.history.length === 0) {
+    showScreen('splash');
+    showFatalBanner(fatalError || 'Meeting ended before the first round. Check your settings.');
+    return;
+  }
   endGame();
+}
+
+function showFatalBanner(msg) {
+  let banner = document.getElementById('fatal-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'fatal-banner';
+    banner.style.cssText = 'position:absolute;top:80px;left:50%;transform:translateX(-50%);background:#3a0f15;color:#ffd6de;border:1px solid #ff5a7a;border-radius:8px;padding:12px 18px;max-width:640px;font-size:13px;line-height:1.5;z-index:200';
+    document.body.appendChild(banner);
+  }
+  const safe = msg.replace(/</g, '&lt;');
+  const backend = state.settings.backend;
+  let hint = '';
+  if (backend === 'groq') {
+    hint = `<br/><br/>Check your Groq key at <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:#ffd6de;text-decoration:underline">console.groq.com/keys</a>. A valid key starts with <code>gsk_</code>.`;
+  } else if (backend === 'chrome') {
+    hint = `<br/><br/>Chrome's built-in Prompt API isn't enabled here. Try switching <b>LLM backend</b> to <b>WebLLM</b> — runs locally via WebGPU, downloads the model on first visit, then works forever offline.`;
+  } else if (backend === 'webllm') {
+    hint = `<br/><br/>WebLLM needs WebGPU (Chrome/Edge/Arc) and the model download to succeed. Check devtools console for a specific failure.`;
+  } else if (backend === 'ollama') {
+    hint = `<br/><br/>Is Ollama running on this machine? Start it with <code>ollama serve</code>, and make sure you ran <code>OLLAMA_ORIGINS=* ollama serve</code> so the browser can reach it cross-origin.`;
+  }
+  banner.innerHTML = `<b>Meeting couldn't start.</b><br/>${safe}${hint}`;
+  banner.style.display = 'block';
+  setTimeout(() => { if (banner) banner.style.display = 'none'; }, 45_000);
+}
+
+function showLoadingOverlay(title, subtitle) {
+  let ov = document.getElementById('loading-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'loading-overlay';
+    ov.innerHTML = `
+      <div class="lo-card">
+        <div class="lo-title"></div>
+        <div class="lo-subtitle"></div>
+        <div class="lo-bar"><div class="lo-fill"></div></div>
+        <div class="lo-pct"></div>
+        <div class="lo-msg"></div>
+      </div>`;
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(5,7,13,0.94);display:flex;align-items:center;justify-content:center;z-index:300;font-family:inherit';
+    ov.querySelector('.lo-card').style.cssText = 'max-width:520px;text-align:center;padding:32px;background:#0f1424;border:1px solid #2a2f3a;border-radius:12px';
+    ov.querySelector('.lo-title').style.cssText = 'font-size:22px;font-weight:600;margin-bottom:6px';
+    ov.querySelector('.lo-subtitle').style.cssText = 'font-size:13px;color:#8795b8;margin-bottom:22px';
+    ov.querySelector('.lo-bar').style.cssText = 'height:8px;background:#1a1530;border-radius:4px;overflow:hidden;margin-bottom:8px';
+    ov.querySelector('.lo-fill').style.cssText = 'height:100%;width:0;background:linear-gradient(90deg,#06B6D4,#c084fc);transition:width 200ms linear';
+    ov.querySelector('.lo-pct').style.cssText = 'font-size:12px;color:#8795b8;margin-bottom:8px';
+    ov.querySelector('.lo-msg').style.cssText = 'font-size:11px;color:#8795b8;line-height:1.4';
+    document.body.appendChild(ov);
+  }
+  ov.querySelector('.lo-title').textContent = title;
+  ov.querySelector('.lo-subtitle').textContent = subtitle || '';
+  ov.style.display = 'flex';
+}
+function updateLoadingOverlay(msg, pct) {
+  const ov = document.getElementById('loading-overlay');
+  if (!ov) return;
+  ov.querySelector('.lo-msg').textContent = msg || '';
+  ov.querySelector('.lo-fill').style.width = (Math.max(0, Math.min(1, pct || 0)) * 100).toFixed(1) + '%';
+  ov.querySelector('.lo-pct').textContent = ((pct || 0) * 100).toFixed(1) + '%';
+}
+function hideLoadingOverlay() {
+  const ov = document.getElementById('loading-overlay');
+  if (ov) ov.style.display = 'none';
 }
 
 function endGame() {
