@@ -1754,7 +1754,7 @@ const CAPTURE_CALIBRATION = {
   jawOpen:            { bias: 0.05, gain: 1.5 },
 };
 
-function calibrateScore(name, raw) {
+export function calibrateScore(name, raw) {
   const c = CAPTURE_CALIBRATION[name];
   if (!c) return raw;
   let v = (raw - c.bias) * c.gain;
@@ -1865,7 +1865,7 @@ const MEDIAPIPE_BUNDLE  = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@
 const MEDIAPIPE_WASM    = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`;
 const FACE_LANDMARKER_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
 
-async function startLiveCapture({ container, morphMeshes, setInfluence, statusEl }) {
+export async function startLiveCapture({ container, morphMeshes, setInfluence, statusEl }) {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('camera not available (requires HTTPS or localhost)');
   }
@@ -2177,6 +2177,6 @@ async function startLiveCapture({ container, morphMeshes, setInfluence, statusEl
   };
 }
 
-function stopLiveCapture(capture) {
+export function stopLiveCapture(capture) {
   if (capture?.stop) capture.stop();
 }
