@@ -1,0 +1,51 @@
+# Pipeline configuration — single source of truth for paths and versions.
+#
+# SETUP for new operators:
+#
+#   cp _config/pipeline.example.yaml _config/pipeline.yaml
+#
+# Then fill in the four <...> placeholders below with your local UE
+# project + UE editor + Blender paths. `_config/pipeline.yaml` is
+# gitignored, so your local paths never leak back into the repo.
+
+# Active pipeline. Default is 5.7/native-glb (the smallest, fastest path
+# with full ARKit blendshapes). 5.6/cinematic is the legacy reference.
+ue_version: "5.7"
+
+# Per-version paths to YOUR local UE installation + the .uproject
+# containing your MetaHumanCharacter assets. The orchestrator picks the
+# block matching `ue_version`.
+ue_by_version:
+  "5.7":
+    project_path: "<PATH_TO_YOUR_UE57_UPROJECT>"   # e.g. C:/Users/you/Documents/Unreal Projects/MH/MH.uproject
+    editor_cmd:   "<PATH_TO_YOUR_UE57_EDITOR_CMD>" # e.g. C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe
+  "5.6.1":
+    project_path: "<PATH_TO_YOUR_UE56_UPROJECT>"   # only if you also use the 5.6/cinematic pipeline
+    editor_cmd:   "<PATH_TO_YOUR_UE56_EDITOR_CMD>"
+
+# Legacy flat fields. Some older tools read these. Keep them in sync
+# with the `ue_by_version[ue_version]` block above (or just delete them
+# if you only use 5.7).
+ue_project_path: "<PATH_TO_YOUR_UE57_UPROJECT>"
+ue_editor_cmd:   "<PATH_TO_YOUR_UE57_EDITOR_CMD>"
+
+# Path to Blender 5.x. Used by stages 02 + 03.
+blender_exe:     "<PATH_TO_YOUR_BLENDER_EXE>"      # e.g. C:/Program Files/Blender Foundation/Blender 5.0/blender.exe
+
+# Where per-character working artifacts live (relative to pipeline root,
+# not the workspace root).
+characters_dir:  "characters"
+
+# GLB web constraints — enforced in stage 03.
+glb_constraints:
+  max_texture_px: 1024
+  draco_compression: true
+  target_tri_budget: 60000
+  skip_groom: true          # v1: groom hair is not exported
+
+# Stage 01 options.
+stage_01:
+  bake_material_inputs: false     # names only; we export textures ourselves
+  export_morph_targets: false     # native-glb path uses Sequencer-baked LSE FBX instead
+  export_lod: 0                   # LOD0 only for v1
+  texture_format: "PNG"

@@ -5,15 +5,34 @@ asset path (or just a character id) and asked you to export it. Turn
 that into a finished web-ready GLB by running 5 stages in sequence.
 Each stage runs in its own sub-agent (isolation).
 
-## Setup (do once, at the start)
+## Setup (silent — no operator interaction)
 
-Before doing anything, resolve these absolute paths from your current
-working directory (which is the worktree root):
+The operator only ever sends a file/asset path and says "export". You
+(Opus, when invoked as orchestrator) handle everything else
+automatically. Do **not** ask the operator any questions during setup.
 
-- `<workspace>` = absolute path of cwd (run `pwd` if unsure)
+### A. Resolve absolute paths
+
+- `<workspace>` = `pwd` (the worktree root)
 - `<pipeline_root>` = `<workspace>/5.7/native-glb`
 
-You'll plug both into the sub-agent prompts in step 3 below.
+### B. Ensure `_config/pipeline.yaml` is ready (auto-detect, no asking)
+
+If `_config/pipeline.yaml` is missing OR contains any `<...>`
+placeholder, populate it silently:
+
+1. `cp _config/pipeline.example.yaml _config/pipeline.yaml` (if missing).
+2. **Auto-detect** the four paths and write them in:
+   - **UE editor cmd**: glob `C:/Program Files/Epic Games/UE_*/Engine/Binaries/Win64/UnrealEditor-Cmd.exe`. Pick the highest version that matches `ue_version` (e.g. `UE_5.7` for `5.7`). If only one UE installed, use it. (Linux/Mac analogues: `~/UnrealEngine-*/Engine/Binaries/...`.)
+   - **UE project**: walk up from the operator's asset path until you hit a `.uproject` file. If the operator only gave a `/Game/...` style in-engine path (no disk location), glob `~/Documents/Unreal Projects/**/*.uproject` and pick the most recently modified one.
+   - **Blender exe**: glob `C:/Program Files/Blender Foundation/Blender */blender.exe`, pick the highest version.
+3. Edit the four placeholders in `_config/pipeline.yaml` with the
+   detected paths. Don't ask the operator to confirm; if a sane
+   default exists, use it.
+
+Only escalate (ask the operator) if auto-detection genuinely fails:
+no UE install found, no Blender install found, multiple equally-valid
+.uproject candidates with no asset-path hint.
 
 ## Operator inputs (one of)
 

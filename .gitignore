@@ -52,6 +52,10 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Local config — paths to your UE project, UE editor, Blender. See
+# _config/pipeline.example.yaml for the template you copy from.
+/_config/pipeline.yaml
+
 # Blender scratch
 *.blend1
 *.blend@
