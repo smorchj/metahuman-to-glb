@@ -21,10 +21,10 @@ and saves a `.blend` for stage 03.
 ## Process
 
 1. Read `_config/pipeline.yaml` to learn `blender_exe`.
-2. Invoke launcher (no PowerShell launcher exists; Haiku spawns Blender
-   directly):
+2. Invoke launcher: `tools/run_assemble.ps1 -Char <id>`. It resolves
+   `blender_exe` from `_config/pipeline.yaml` and runs:
    ```
-   <blender_exe> --background --python <abs>/tools/import_glb.py -- --char <id> --workspace <abs workspace root>
+   <blender_exe> --background --python <abs>/tools/import_glb.py -- --char <id> --workspace <abs pipeline root>
    ```
 3. Launcher blocks until Blender exits. Exit code must be 0.
 4. The script does (in order):

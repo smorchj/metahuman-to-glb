@@ -18,6 +18,10 @@ foreach ($cand in @("python", "py")) {
 }
 if (-not $Py) {
     $Config = Join-Path $Workspace "_config\pipeline.yaml"
+    if (-not (Test-Path $Config)) {
+        $Config = Join-Path (Join-Path $Workspace "..\..\") "_config\pipeline.yaml"
+        $Config = (Resolve-Path $Config).Path
+    }
     $BlenderLine = (Select-String -Path $Config -Pattern '^\s*blender_exe:' | Select-Object -First 1).Line
     if ($BlenderLine) {
         $BlenderExe = ($BlenderLine -replace '^\s*blender_exe:\s*"?([^"]+)"?\s*$', '$1').Trim()

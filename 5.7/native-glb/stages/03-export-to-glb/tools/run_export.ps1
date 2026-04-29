@@ -8,8 +8,14 @@ $ErrorActionPreference = "Stop"
 $ToolsDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Workspace = Resolve-Path (Join-Path $ToolsDir "..\..\..") | Select-Object -ExpandProperty Path
 
-# Load blender_exe from _config/pipeline.yaml
+# Load blender_exe from _config/pipeline.yaml. The config lives at the
+# worktree root (../../ from the pipeline root), so try the in-pipeline
+# location first (legacy) then fall back to the worktree-root location.
 $Config = Join-Path $Workspace "_config\pipeline.yaml"
+if (-not (Test-Path $Config)) {
+    $Config = Join-Path (Join-Path $Workspace "..\..\") "_config\pipeline.yaml"
+    $Config = (Resolve-Path $Config).Path
+}
 $BlenderLine = (Select-String -Path $Config -Pattern '^\s*blender_exe:' | Select-Object -First 1).Line
 if (-not $BlenderLine) { throw "blender_exe not found in $Config" }
 $BlenderExe = ($BlenderLine -replace '^\s*blender_exe:\s*"?([^"]+)"?\s*$', '$1').Trim()
