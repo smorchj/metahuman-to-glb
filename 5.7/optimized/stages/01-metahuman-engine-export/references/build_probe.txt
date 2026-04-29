@@ -1,6 +1,0 @@
-Kleb build probe
-asset: /Game/Kleb.Kleb
-before_skeletal_count: 2
-after_skeletal_count:  2
-new_skeletal_assets:
-

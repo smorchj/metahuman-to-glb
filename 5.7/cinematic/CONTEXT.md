@@ -1,4 +1,7 @@
-# CONTEXT.md — 5.7 Cinematic Pipeline
+# CONTEXT.md — 5.7 Cinematic Pipeline (UNFINISHED)
+
+**Status**: incomplete. Kept for reference only. Use `5.7/native-glb/`
+instead — it's the working 5.7 pipeline with proper ARKit blendshapes.
 
 Fully-isolated pipeline for UE 5.7, cinematic build profile.
 
@@ -14,7 +17,7 @@ Fully-isolated pipeline for UE 5.7, cinematic build profile.
 ## Boundary
 
 All paths in this pipeline resolve relative to this folder (`5.7/cinematic`). Never reach into:
-- Other pipeline roots (e.g. 5.6/cinematic from within 5.7/optimized)
+- Other pipeline roots (e.g. 5.6/cinematic from within 5.7/native-glb)
 - Workspace-global `characters/` (does not exist — per-pipeline only)
 
 Stage 04 is the one exception: it writes into the workspace-global `docs/characters/`

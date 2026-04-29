@@ -10,8 +10,8 @@ fully-isolated self-contained pipeline.
 | Path | What |
 |---|---|
 | `5.6/cinematic/` | UE 5.6 + Cinematic pipeline (the original shipped pipeline) |
-| `5.7/optimized/` | UE 5.7 + Optimized pipeline (normal-map wrinkles, smaller; web-default) |
-| `5.7/cinematic/` | UE 5.7 + Cinematic pipeline (mesh wrinkles, heavier; higher fidelity) |
+| `5.7/native-glb/` | UE 5.7 + Native-GLB pipeline (current default; ARKit blendshapes via Sequencer bake, smallest GLB output) |
+| `5.7/cinematic/` | UE 5.7 + Cinematic pipeline — **unfinished**, kept for reference; superseded by `native-glb` |
 
 Each pipeline root is fully self-contained:
 
@@ -45,7 +45,7 @@ Each pipeline root is fully self-contained:
       03-glb/
 ```
 
-**No cross-pipeline reach.** Stage 02 of 5.7-optimized does not import from
+**No cross-pipeline reach.** Stage 02 of 5.7-native-glb does not import from
 5.6-cinematic. Changes in one pipeline cannot affect another.
 
 ## Workspace-wide (NOT per-pipeline)
@@ -68,7 +68,7 @@ Each pipeline root is fully self-contained:
 
 | Operator says | Do |
 |---|---|
-| "export `<id>` via 5.7 optimized" | `cd 5.7/optimized` then dispatch |
+| "export `<id>` via 5.7 native-glb" | `cd 5.7/native-glb` then dispatch |
 | "export `<id>`" (no pipeline) | Use `_config/pipeline.yaml → active_pipeline` |
 | "re-export `<id>`" | Reset manifest, dispatch |
 | "redo stage `<N>`" | Reset stage N and later to pending, dispatch |
