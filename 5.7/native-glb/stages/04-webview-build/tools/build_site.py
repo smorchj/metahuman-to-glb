@@ -1,9 +1,23 @@
-"""Stage 04 — build GitHub Pages site from stage 03 GLBs.
+"""Stage 04 — build GitHub Pages site from stage 03 GLBs + render-validate.
 
 Invoked as:
     python build_site.py --char <id> --workspace <abs>
+    python build_site.py --char <id> --workspace <abs> --skip-validate
 
-No Blender dependency. Standard-library only.
+Two phases:
+
+  1. BUILD: copy GLB + sidecar textures into docs/, render per-character
+     viewer page from template, regenerate gallery index.
+
+  2. VALIDATE: spin up a local HTTP server, open the character page in
+     headless Chromium via Playwright, wait for `window.__viewer` to
+     mount, capture any console errors, take a preview screenshot, and
+     fail the stage if the viewer doesn't render. This is what catches
+     CDN / importmap / shader regressions before they reach a user.
+
+Validation requires Playwright (pip install playwright; playwright
+install chromium). Pass --skip-validate to bypass it (e.g. on a CI
+runner without browsers installed); the build half still runs.
 
 Inputs:  characters/<id>/03-glb/<id>.glb + glb_manifest.json
          characters/<id>/03-glb/mh_materials.json   (optional — MH material map)
@@ -13,6 +27,7 @@ Inputs:  characters/<id>/03-glb/<id>.glb + glb_manifest.json
 Outputs: docs/index.html
          docs/characters/<id>/index.html + <id>.glb
          docs/characters/<id>/mh_materials.json + textures/*
+         docs/characters/<id>/preview.png    (render-validation screenshot)
          docs/assets/style.css + docs/assets/viewer.js
          docs/.nojekyll
          Updates characters/<id>/manifest.json (stages.04_webview_build)
@@ -190,6 +205,142 @@ def _build_gallery(
 
 
 # ---------------------------------------------------------------------------
+# Render validation (headless browser)
+
+def _validate_render(docs: Path, char_id: str) -> tuple[bool, list[str]]:
+    """Spin up a local HTTP server in `docs/`, open the character viewer
+    in headless Chromium via Playwright, wait for `window.__viewer` to
+    be set, capture any console errors, and write a preview screenshot
+    to `docs/characters/<id>/preview.png`.
+
+    Returns (ok, errors). On `ok=False`, `errors` lists actionable
+    messages (CORS failure, missing window.__viewer, console errors,
+    etc.) — those go straight into the stage's manifest `errors[]`.
+    """
+    errors: list[str] = []
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        errors.append(
+            "playwright not installed — required for stage-04 render validation. "
+            "Run: `pip install playwright && playwright install chromium` "
+            "(one-time; the browser binary is ~300 MB). To skip validation, "
+            "pass --skip-validate to build_site.py."
+        )
+        return False, errors
+
+    import subprocess
+    import socket
+    import time
+    import urllib.request
+
+    # Pick a free local port so concurrent runs / running servers don't clash.
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+
+    server = subprocess.Popen(
+        [sys.executable, "-m", "http.server", str(port)],
+        cwd=str(docs),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    try:
+        # Wait for server to come up (poll up to ~4s).
+        for _ in range(20):
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=0.5).read()
+                break
+            except Exception:
+                time.sleep(0.2)
+        else:
+            errors.append(f"local HTTP server failed to start on port {port}")
+            return False, errors
+
+        url = f"http://127.0.0.1:{port}/characters/{char_id}/"
+        print(f"[stage04] validating {url}", flush=True)
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(viewport={"width": 1280, "height": 800})
+            page = context.new_page()
+
+            console_errors: list[str] = []
+            page.on(
+                "console",
+                lambda msg: console_errors.append(msg.text)
+                if msg.type == "error"
+                else None,
+            )
+            page.on("pageerror", lambda exc: console_errors.append(str(exc)))
+
+            page.goto(url, wait_until="domcontentloaded", timeout=15000)
+
+            # Wait up to 25 s for the viewer to mount. mount() awaits the
+            # Draco-decompressed GLB load + material build + initial frame,
+            # so window.__viewer being set is a strong "the page actually
+            # rendered" signal.
+            try:
+                page.wait_for_function(
+                    "window.__viewer !== undefined", timeout=25_000
+                )
+            except Exception:
+                # The viewer's catch-handler writes a red <pre> with the
+                # error message into the stage div on mount failure. Pull
+                # it out so the operator sees the actual cause.
+                err_text = None
+                try:
+                    err_loc = page.locator(".stage pre")
+                    if err_loc.count() > 0:
+                        err_text = err_loc.first.inner_text(timeout=1000)
+                except Exception:
+                    pass
+                if err_text:
+                    errors.append(f"viewer mount failed: {err_text.strip()}")
+                else:
+                    errors.append(
+                        "viewer never mounted (window.__viewer not set after 25 s); "
+                        "check the page for console errors"
+                    )
+                if console_errors:
+                    errors.append(
+                        "console errors: "
+                        + " | ".join(console_errors[:3])
+                    )
+                browser.close()
+                return False, errors
+
+            # Give the renderer one more frame to draw the GLB.
+            time.sleep(1.0)
+
+            # Console errors after mount are a strong signal something
+            # is wrong even if mount itself succeeded.
+            if console_errors:
+                errors.append(
+                    "console errors after mount: "
+                    + " | ".join(console_errors[:3])
+                )
+
+            preview_path = docs / "characters" / char_id / "preview.png"
+            page.screenshot(path=str(preview_path), full_page=False)
+            print(f"[stage04] preview saved: {preview_path}", flush=True)
+
+            browser.close()
+
+        return (len(errors) == 0), errors
+
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            server.kill()
+
+
+# ---------------------------------------------------------------------------
 # Manifest I/O
 
 def _update_char_manifest(char_dir: Path, status: str, errors: list[str]) -> None:
@@ -217,6 +368,8 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--char", required=True)
     p.add_argument("--workspace", required=True)
+    p.add_argument("--skip-validate", action="store_true",
+                   help="skip the headless-browser render check (CI without browsers)")
     args = p.parse_args()
 
     workspace = Path(args.workspace)
@@ -244,6 +397,22 @@ def main() -> int:
         print(f"[stage04] built {args.char} ({card['tri_count']:,} tris, {card['file_size_mb']} MiB)", flush=True)
         print(f"[stage04] gallery has {count} character(s)", flush=True)
         print(f"[stage04] docs/ at {docs}", flush=True)
+
+        # Render-validation phase. Open the freshly-built page in headless
+        # Chromium and confirm the GLB actually mounts. Catches CDN /
+        # importmap / Draco / shader regressions that the file-copy phase
+        # can't detect. Writes preview.png as evidence.
+        if args.skip_validate:
+            print("[stage04] --skip-validate: skipping headless-browser render check", flush=True)
+        else:
+            ok, errs = _validate_render(docs, args.char)
+            if not ok:
+                print(f"[stage04] FAILED render validation:", flush=True)
+                for e in errs:
+                    print(f"  - {e}", flush=True)
+                _update_char_manifest(char_dir, "failed", errs)
+                return 2
+            print("[stage04] render validation: OK", flush=True)
 
         _update_char_manifest(char_dir, "done", [])
         print("[stage04] char manifest updated: status=done", flush=True)

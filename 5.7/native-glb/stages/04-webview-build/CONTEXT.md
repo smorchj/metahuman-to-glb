@@ -30,9 +30,10 @@ fix or retroactively mark other stages' status.
 
 ## Process
 
-1. Invoke `tools/run_site.ps1 -Char <id>`. It runs (via Blender's bundled Python):
+1. Invoke `tools/run_site.ps1 -Char <id>`. It runs:
    `python build_site.py --char <id> --workspace <abs>`
-2. `build_site.py`:
+2. `build_site.py` runs in two phases:
+   **BUILD phase**:
    - Reads `<id>`'s stage 03 manifest + GLB.
    - Copies GLB to `docs/characters/<id>/<id>.glb`.
    - Renders `docs/characters/<id>/index.html` from `templates/viewer.html`
@@ -43,6 +44,17 @@ fix or retroactively mark other stages' status.
    - Copies `templates/style.css` → `docs/assets/style.css`.
    - Writes/overwrites `docs/.nojekyll` (prevents GitHub's Jekyll from
      dropping paths starting with `_`).
+   **VALIDATE phase** (catches CDN / importmap / Draco / shader regressions
+   before they reach a user):
+   - Spins up a local HTTP server on a free port in `docs/`.
+   - Opens the freshly-built character page in headless Chromium via
+     Playwright.
+   - Waits up to 25 s for `window.__viewer` to be set (signals the GLB
+     mounted and the first frame rendered).
+   - Captures any console errors / unhandled page errors.
+   - Takes a viewport screenshot, writes `docs/characters/<id>/preview.png`.
+   - Tears down the server. Fails the stage if the viewer didn't mount,
+     or if any console errors fired during the run.
 3. Update `characters/<id>/manifest.json` — **only** the
    `stages.04_webview_build` block. Do not read, modify, or "fix" any
    other stage's status, timestamps, or errors. The dispatcher (Opus)
@@ -62,8 +74,27 @@ fix or retroactively mark other stages' status.
 | Per-character viewer | `docs/characters/<id>/index.html` + `<id>.glb` | One folder per character |
 | Gallery index | `docs/index.html` | Links to every published character |
 | Site stylesheet | `docs/assets/style.css` | Shared across all pages |
+| Render-validation screenshot | `docs/characters/<id>/preview.png` | Headless-Chromium snapshot of the live viewer (1280×800). Evidence the GLB actually rendered. |
 | Jekyll opt-out | `docs/.nojekyll` | Ensures underscore-prefixed paths work |
 | Updated char manifest | `characters/<id>/manifest.json` | `stages.04_webview_build` fields |
+
+## Tooling requirement
+
+The validate phase needs **Playwright + Chromium** installed on the
+local machine:
+
+```
+pip install playwright
+playwright install chromium
+```
+
+One-time setup (the Chromium binary is ~300 MB). If Playwright is
+missing, this stage fails with an actionable error.
+
+For CI / environments without browsers, pass `--skip-validate` to
+`build_site.py` — the build phase still runs and writes the site,
+but no `preview.png` is produced and the manifest will still mark
+the stage `done`.
 
 ## Publishing to GitHub Pages
 
@@ -102,3 +133,12 @@ this stage will remove it from the gallery on the next rebuild
 - `<id>.glb` missing → stage 03 hasn't run. Ask operator to run stage 03 first.
 - `docs/` is git-ignored → add `docs/` to the repo (remove from `.gitignore`)
   so GitHub Pages can serve it.
+- `playwright not installed` → run the one-time setup above. Bypass
+  with `--skip-validate` if you genuinely can't install browsers.
+- `viewer never mounted` → the page loads but `window.__viewer` never
+  gets set. Usually a JS / CDN / importmap regression in
+  `templates/viewer.html` or `templates/viewer.js`. The error from
+  the page's red <pre> is captured into the manifest's `errors[]`.
+- `console errors during mount` → some asset (Draco loader, texture,
+  morph data) failed. The first 3 console errors are captured into
+  `errors[]` for diagnosis.
