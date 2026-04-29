@@ -24,6 +24,22 @@ $ErrorActionPreference = "Stop"
 $ToolsDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Workspace = (Resolve-Path (Join-Path $ToolsDir "..\..\..")).Path   # <pipeline root>
 
+# Single exit point that ALSO writes characters/<char>/manifest.json
+# before exiting. Makes stage completion resilient to Claude/dispatcher
+# crashes — even if the agent dies after the launcher returned, the
+# manifest is already authoritative.
+function Exit-Stage([int]$Code) {
+    $UpdateScript = Join-Path $Workspace "tools\_update_manifest.py"
+    if (Test-Path $UpdateScript) {
+        & python $UpdateScript `
+            --char $Char `
+            --workspace $Workspace `
+            --stage "00_unreal_assemble" `
+            --exit $Code 2>&1 | ForEach-Object { Write-Host $_ }
+    }
+    exit $Code
+}
+
 $ConfigPath = Join-Path $Workspace "_config\pipeline.yaml"
 if (-not (Test-Path $ConfigPath)) {
     # Pipeline-local config not present - fall back to repo-root _config/
@@ -187,17 +203,17 @@ if (Test-Path $StatusPath) {
     try {
         $final = Get-Content $StatusPath -Raw | ConvertFrom-Json
         switch ($final.phase) {
-            "DONE"   { exit 0 }
-            "FAILED" { exit 2 }
+            "DONE"   { Exit-Stage 0 }
+            "FAILED" { Exit-Stage 2 }
             default  {
                 Write-Host "[stage00] non-terminal phase '$($final.phase)' - treating as failure"
-                exit 3
+                Exit-Stage 3
             }
         }
     } catch {
         Write-Host "[stage00] could not parse status.json: $_"
-        exit 4
+        Exit-Stage 4
     }
 }
 Write-Host "[stage00] no status.json was written - UE never ran the script"
-exit 5
+Exit-Stage 5

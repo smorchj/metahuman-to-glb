@@ -33,4 +33,14 @@ Write-Host "[run_export] blend     = $Blend"
 & $BlenderExe --background $Blend --python $PyScript -- --char $Char --workspace $Workspace
 $code = $LASTEXITCODE
 Write-Host "[run_export] exit code: $code"
+
+# Write the per-character manifest before exiting so stage completion
+# survives a Claude/dispatcher crash. The launcher is the source of
+# truth for stage state — agents only verify, they don't write.
+$UpdateScript = Join-Path $Workspace "tools\_update_manifest.py"
+if (Test-Path $UpdateScript) {
+    & python $UpdateScript --char $Char --workspace $Workspace `
+        --stage "03_glb_export" --exit $code 2>&1 |
+        ForEach-Object { Write-Host $_ }
+}
 exit $code

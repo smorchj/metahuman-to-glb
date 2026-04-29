@@ -39,4 +39,14 @@ Write-Host "[run_site] char      = $Char"
 & $Py $PyScript --char $Char --workspace $Workspace
 $code = $LASTEXITCODE
 Write-Host "[run_site] exit code: $code"
+
+# Write the per-character manifest before exiting so stage completion
+# survives a Claude/dispatcher crash. The launcher is the source of
+# truth for stage state — agents only verify, they don't write.
+$UpdateScript = Join-Path $Workspace "tools\_update_manifest.py"
+if (Test-Path $UpdateScript) {
+    & python $UpdateScript --char $Char --workspace $Workspace `
+        --stage "04_webview_build" --exit $code 2>&1 |
+        ForEach-Object { Write-Host $_ }
+}
 exit $code
