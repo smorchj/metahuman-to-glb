@@ -68,12 +68,10 @@ Each pipeline root is fully self-contained:
 
 | Operator says | Do |
 |---|---|
-| "export `<id>` via 5.7 native-glb" | `cd 5.7/native-glb` then dispatch |
-| "export `<id>`" (no pipeline) | Use `_config/pipeline.yaml → active_pipeline` |
-| "re-export `<id>`" | Reset manifest, dispatch |
-| "redo stage `<N>`" | Reset stage N and later to pending, dispatch |
-| "status of `<id>`" | Read pipeline's `characters/<id>/manifest.json` |
-| "add character `<id>`" to `<pipeline>` | `cp -r <pipeline>/characters/_template <pipeline>/characters/<id>/` |
+| "export `<asset_path>`" or "export `<id>`" | Read `5.7/native-glb/RUN.md` and follow it (bootstraps + runs all 5 stages with one Haiku per stage). |
+| "redo stage `<N>` for `<id>`" | Reset stage N's manifest block to `pending`, then spawn one Haiku for that stage using the sub-agent prompt template in `5.7/native-glb/RUN.md` step 3. |
+| "status of `<id>`" | Read `5.7/native-glb/characters/<id>/manifest.json`. |
+| "add character `<id>`" to `<pipeline>` (manual) | `python 5.7/native-glb/tools/bootstrap_character.py --id <id>`. |
 
 ## Haiku spawn prompt (reference)
 
