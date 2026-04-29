@@ -265,11 +265,11 @@ def _wire_card_materials(in_root, mh_manifest):
 
             # Pick the Attribute (data) atlas by mesh prefix. The
             # Attribute texture is what carries strand cutout (R) and
-            # root-darkening (B).
+            # root-darkening (B). Each MH groom kind has its own
+            # plugin-content folder; stage 01 exports atlases as
+            # `<Kind_Style>_CardsAtlas_Attribute.png`.
             if name_low.startswith("hair_"):
-                attr_name, attr_path = _find(
-                    ["Hair_S_Coil_CardsAtlas_Attribute",
-                     "Hair_"])
+                attr_name, attr_path = _find(["Hair_"])
             elif name_low.startswith("eyebrows_"):
                 # Prefer the engine-plugin-sourced atlas (named
                 # `Eyebrows_<style>_CardsAtlas_Attribute`) over the
@@ -277,6 +277,10 @@ def _wire_card_materials(in_root, mh_manifest):
                 # writes when it can't resolve the source name.
                 attr_name, attr_path = _find(
                     ["Eyebrows_", "Texture2D_0"])
+            elif name_low.startswith("beard_"):
+                attr_name, attr_path = _find(["Beard_"])
+            elif name_low.startswith("mustache_") or name_low.startswith("moustache_"):
+                attr_name, attr_path = _find(["Mustache_"])
             else:
                 continue
             if not attr_path:

@@ -637,11 +637,15 @@ def main():
                   if str(getattr(a, "asset_class_path", a).asset_name) == "Texture2D"]
     _log(f"  sidecar: {len(tex_assets)} Texture2D in {grooms_textures}")
 
-    # Eyebrow + eyelash card atlases live in the engine plugin content,
-    # not under /Game/<char>/. Discover Ada's groom styles by listing
-    # GroomAssets under /Game/<char>/Grooms/, then pull the matching
-    # plugin atlases by predictable path.
-    plugin_eyebrows = "/MetaHumanCharacter/Optional/Grooms/GroomAssets/Eyebrows"
+    # Card-atlas textures for hair, eyebrows, beard, mustache, eyelashes
+    # all live in the engine plugin content (NOT under /Game/<char>/),
+    # with one folder per style. Discover the character's groom styles
+    # by listing GroomAssets under /Game/<char>/Grooms/, then pull the
+    # matching plugin atlases by predictable path.
+    plugin_eyebrows  = "/MetaHumanCharacter/Optional/Grooms/GroomAssets/Eyebrows"
+    plugin_hair      = "/MetaHumanCharacter/Optional/Grooms/GroomAssets/Hair"
+    plugin_beards    = "/MetaHumanCharacter/Optional/Grooms/GroomAssets/Beards"
+    plugin_mustaches = "/MetaHumanCharacter/Optional/Grooms/GroomAssets/Mustaches"
     plugin_lashes_textures = "/MetaHumanCharacter/Textures/Eyelashes"
     try:
         groom_root_assets = ar.get_assets_by_path(
@@ -656,26 +660,43 @@ def main():
             groom_styles.append(str(a.asset_name))
     _log(f"  sidecar: groom styles in /Game/{args.char}/Grooms: {groom_styles}")
 
-    # Force-index the plugin content roots that hold the eyebrow +
-    # eyelash atlases. They aren't auto-indexed at editor startup
-    # (the MetaHuman plugin uses lazy loading for its Optional content),
-    # so LoadAsset returns None unless we scan first.
+    # Force-index the plugin content roots that hold the card atlases.
+    # They aren't auto-indexed at editor startup (the MetaHuman plugin
+    # uses lazy loading for its Optional content), so LoadAsset returns
+    # None unless we scan first.
     try:
-        ar.scan_paths_synchronous([plugin_eyebrows, plugin_lashes_textures],
-                                  force_rescan=False)
+        ar.scan_paths_synchronous(
+            [plugin_eyebrows, plugin_hair, plugin_beards,
+             plugin_mustaches, plugin_lashes_textures],
+            force_rescan=False)
     except Exception as e:
         _log(f"  sidecar: scan plugin paths failed: {e}")
 
+    # Map groom-style name prefix -> plugin-content folder. Hair, brows,
+    # beard, mustache all follow the same `<style>_CardsAtlas_{kind}`
+    # convention; eyelashes are special-cased (single Coverage texture
+    # under a different plugin path).
+    style_to_plugin = (
+        ("Eyebrows_", plugin_eyebrows),
+        ("Hair_",     plugin_hair),
+        ("Beard_",    plugin_beards),
+        ("Mustache_", plugin_mustaches),
+    )
+
     plugin_atlas_paths = []
     for style in groom_styles:
-        if style.startswith("Eyebrows_"):
-            plugin_atlas_paths.append(
-                f"{plugin_eyebrows}/{style}/{style}_CardsAtlas_Attribute"
-                f".{style}_CardsAtlas_Attribute")
-            plugin_atlas_paths.append(
-                f"{plugin_eyebrows}/{style}/{style}_CardsAtlas_Tangent"
-                f".{style}_CardsAtlas_Tangent")
-        elif style.startswith("Eyelashes_"):
+        matched = False
+        for prefix, plugin_dir in style_to_plugin:
+            if style.startswith(prefix):
+                for atlas_kind in ("Attribute", "Tangent"):
+                    plugin_atlas_paths.append(
+                        f"{plugin_dir}/{style}/{style}_CardsAtlas_{atlas_kind}"
+                        f".{style}_CardsAtlas_{atlas_kind}")
+                matched = True
+                break
+        if matched:
+            continue
+        if style.startswith("Eyelashes_"):
             plugin_atlas_paths.append(
                 f"{plugin_lashes_textures}/T_{style}_Coverage"
                 f".T_{style}_Coverage")
