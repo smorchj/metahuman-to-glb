@@ -158,10 +158,14 @@ def main():
     source_dir = os.path.join(char_dir, "source")
     os.makedirs(source_dir, exist_ok=True)
     readme = os.path.join(source_dir, "README.md")
+    # Strip MSYS prefix when writing the asset path so the README shows
+    # the canonical UE form (`/Game/...`) rather than e.g.
+    # `C:/Program Files/Git/Game/...` from a Git Bash invocation.
+    asset_for_readme = _strip_shell_prefix(args.asset) if args.asset else None
     with open(readme, "w", encoding="utf-8") as f:
         f.write(f"# {char_id} — source (5.7 native-glb)\n\n")
-        if args.asset:
-            f.write(f"Original asset path: `{args.asset}`\n\n")
+        if asset_for_readme:
+            f.write(f"Original asset path: `{asset_for_readme}`\n\n")
         f.write(f"UE folder: `{mh_folder}`\n")
         f.write(f"UE asset name: `{output_name}`\n")
         f.write(
