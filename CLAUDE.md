@@ -1,51 +1,71 @@
 # CLAUDE.md — Pipeline Agent Orientation
 
-You are an agent operating inside an **Interpretable Context Methodology (ICM)** workspace
+You are an agent in an **Interpretable Context Methodology (ICM)** workspace
 (Van Clief / Model Workspace Protocol). This file is Layer 0: system orientation.
 
 ## What this workspace does
 
-Converts UE MetaHuman characters to web-ready GLB files via three deterministic stages:
-  01 → export FBX + textures from UE
-  02 → assemble + clean up in Blender
-  03 → export GLB with web constraints
+Converts a UE MetaHuman character into a web-ready GLB via 5 deterministic stages.
+The default pipeline is **`5.7/native-glb/`** (UE 5.7 + native-GLB output, ARKit-52
+blendshapes baked via UE Sequencer). 5.6/cinematic is the legacy reference.
+
+## When the operator asks you to export a character
+
+If the operator's request is anything like *"export this character"*, *"please run
+the pipeline on `<asset>`"*, or just sends a UE asset path, **read
+`5.7/native-glb/RUN.md` and follow it exactly**. RUN.md is fully self-contained:
+it tells you to bootstrap the character folder and then dispatch one Haiku
+sub-agent per stage in sequence.
+
+You do not need to read any other CONTEXT.md, the per-stage Python sources, or
+the operator's UE project. RUN.md handles all of that.
 
 ## How the workspace is organized
 
-- `CONTEXT.md` (root)          — Layer 1: task routing. Read this first.
-- `_config/pipeline.yaml`       — Layer 3: config shared across all stages
-- `skills/*.md`                 — Layer 3: stable reference material (MH asset layout, FBX rules, etc.)
-- `stages/<NN>-<name>/`         — one stage per numbered folder, strict boundary
-  - `CONTEXT.md`                — Layer 2: the stage contract (Inputs / Process / Outputs)
-  - `tools/`                    — scripts the stage runs
-  - `references/`               — stage-specific reference files
-- `characters/<id>/`            — Layer 4: per-character working artifacts
-  - `manifest.json`             — per-character status, one record per stage
-  - `source/`, `01-fbx/`, `02-blend/`, `03-glb/` — stage outputs
+```
+<worktree>/
+  CONTEXT.md                           ← root task routing
+  CLAUDE.md                            ← this file (auto-loaded)
+  _config/pipeline.yaml                ← shared config (UE + Blender paths)
+  5.7/native-glb/                      ← active pipeline
+    RUN.md                             ← operator entry point ★
+    tools/bootstrap_character.py       ← character-folder scaffolder
+    stages/00-unreal-assemble/
+      CONTEXT.md                       ← stage contract (Haiku reads only this)
+      tools/run_assemble.ps1           ← stage launcher
+    stages/01-unreal-glb-export/
+    stages/02-blender-assemble/
+    stages/03-export-to-glb/
+    stages/04-webview-build/
+    characters/_template/              ← copied per character
+    characters/<id>/                   ← per-character working artifacts
+      manifest.json                    ← per-stage status
+      source/, 01-glb/, 02-blend/, 03-glb/   ← stage outputs (gitignored)
+```
 
-## Context discipline (the rule)
+## Stage isolation (the hard rule)
 
-When working on stage N, **only load** that stage's `CONTEXT.md` + files it names in its
-Inputs table + the current character's `characters/<id>/` folder. Do not load other stages.
-This keeps total context low enough for Haiku to execute reliably.
+When running a single stage, **only load** that stage's `CONTEXT.md` + the files
+it names in its Inputs table + the current character's `characters/<id>/`.
+Do not load other stages' contracts, other characters' manifests, or pipeline
+code outside `stages/<NN>/tools/`.
 
-Opus designs and edits the contracts. Haiku runs them.
+A stage Haiku updates **only** its own `stages.<NN>_<key>` block in the
+character manifest — never another stage's status, even if state looks
+inconsistent. The orchestrator (RUN.md flow) owns cross-stage state.
 
-## Spawning a Haiku agent for one stage
+## Roles
 
-From the root `CONTEXT.md`, the orchestration pattern is:
-
-  For character <id> at stage <NN>:
-    prompt = stages/<NN>-*/CONTEXT.md + characters/<id>/ + stage's Inputs files
-    tools  = only tools in stages/<NN>-*/tools/
-    model  = claude-haiku-4-5
-
-Haiku's job is narrow: read Inputs table, invoke the stage's one launcher script,
-verify outputs match the Outputs table, update `characters/<id>/manifest.json`.
+| Model | Job |
+|---|---|
+| Haiku (sub-agent per stage) | Read one stage's CONTEXT.md, run its launcher, verify outputs, update its manifest block. |
+| Haiku (orchestrator) | Read RUN.md, run bootstrap, spawn 5 stage sub-agents in sequence, report. |
+| Opus (you, when invoked) | Edit contracts, add stages, add new pipelines, debug failures the orchestrator escalates. Don't run stages — that's Haiku's job. |
 
 ## Rules
 
-- Scripts are deterministic Python/PowerShell. LLMs glue, they don't transform.
-- Every stage writes a machine-readable manifest. No stage reads another stage's internals.
+- Scripts (`*.py`, `*.ps1`) are deterministic. LLMs glue and verify; scripts transform.
+- Every stage writes a machine-readable manifest. Stages don't read each other.
 - Fail loud with actionable messages. Never silently skip.
-- Version-pinned stages (e.g. `01-metahuman-engine-export/5.6.1/`) — do not mix versions.
+- Per-version + per-pipeline boundary is hard. `5.7/native-glb/` does not import
+  from `5.6/cinematic/`.

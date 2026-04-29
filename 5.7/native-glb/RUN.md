@@ -1,38 +1,46 @@
 # RUN.md — 5.7 native-glb pipeline orchestrator (Haiku entry point)
 
-You are an orchestrator agent. The operator gave you a UE
-MetaHumanCharacter asset path (or just a character id). Your job is to
-turn it into a finished web-ready GLB by running this pipeline's five
-stages in sequence. Each stage runs in its own sub-agent so the work is
-isolated.
+You are the orchestrator. The operator sent a UE MetaHumanCharacter
+asset path (or just a character id) and asked you to export it. Turn
+that into a finished web-ready GLB by running 5 stages in sequence.
+Each stage runs in its own sub-agent (isolation).
 
-## Your inputs
+## Setup (do once, at the start)
 
-The operator gives you one of these forms:
+Before doing anything, resolve these absolute paths from your current
+working directory (which is the worktree root):
 
-- A UE asset path: `/Game/Ada/MHC_Ada` (most common)
-- A UE folder path: `/Game/Ada`
+- `<workspace>` = absolute path of cwd (run `pwd` if unsure)
+- `<pipeline_root>` = `<workspace>/5.7/native-glb`
+
+You'll plug both into the sub-agent prompts in step 3 below.
+
+## Operator inputs (one of)
+
+- UE asset path: `/Game/Ada/MHC_Ada` (most common)
+- UE folder path: `/Game/Ada`
 - Just an id: `ada` (assumes `/Game/Ada` exists in the project)
 
-## Your job (5 steps total)
+## Step 1 — Bootstrap the character folder
 
-### 1. Bootstrap the character folder
-
-Run the bootstrap script to create `characters/<id>/` from the template:
+Run the bootstrap script:
 
 ```
-python <pipeline_root>/tools/bootstrap_character.py --asset <asset_path>
+python 5.7/native-glb/tools/bootstrap_character.py --asset <asset_path>
 ```
 
 (or `--id <id>` if the operator gave just an id).
 
-It writes `characters/<id>/manifest.json` with `character_id`,
+Outcome: `characters/<id>/manifest.json` exists with `character_id`,
 `mh_folder`, `output_name`, and every stage set to `pending`.
+
+Read the bootstrap script's `[bootstrap] char_id: <X>` line to learn
+what `<id>` it derived. Use that `<id>` for the rest of this run.
 
 If the script exits 1 ("character already exists"), ask the operator
 whether to re-export. If yes, re-run with `--force`. If no, abort.
 
-### 2. Dispatch stage 00 → 01 → 02 → 03 → 04
+## Step 2 — Dispatch stage 00 → 01 → 02 → 03 → 04
 
 For each stage in order, spawn a sub-Haiku agent with the prompt below.
 **Wait for each sub-agent to complete before starting the next.** Read
@@ -42,7 +50,7 @@ and report which stage failed.
 Use the Agent tool with `subagent_type: general-purpose` and
 `model: haiku`.
 
-### 3. Sub-agent prompt template
+## Step 3 — Sub-agent prompt template
 
 Substitute `<NN>`, `<stage_dir>`, `<id>`, and `<workspace>` with concrete
 values for each spawn:
@@ -73,7 +81,7 @@ CRITICAL: When updating the manifest, modify ONLY the `stages.<NN>_<stage_key>` 
 Report under 200 words: launcher exit code, output files verified (paths + sizes), this stage's final status in the manifest, any failure modes.
 ```
 
-### 4. Stage names (use exactly these)
+## Step 4 — Stage names (use exactly these)
 
 | `<NN>` | `<stage_name>` | manifest key | timing |
 |---|---|---|---|
@@ -83,7 +91,7 @@ Report under 200 words: launcher exit code, output files verified (paths + sizes
 | 03 | `export-to-glb` | `03_glb_export` | ~30-60 s |
 | 04 | `webview-build` | `04_webview_build` | ~5 s |
 
-### 5. Final report
+## Step 5 — Final report
 
 When all five stages report `status: "done"`, tell the operator:
 
