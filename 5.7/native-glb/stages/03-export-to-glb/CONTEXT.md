@@ -9,9 +9,22 @@ compressed with Draco.
 | Source | File / Location | Section | Why |
 |---|---|---|---|
 | Workspace config | `_config/pipeline.yaml` | `blender_exe`, `glb_constraints` | Blender path + web limits |
-| Character manifest | `characters/<id>/manifest.json` | `character_id` | Which character |
+| Character manifest | `characters/<id>/manifest.json` | `character_id` | Identify the character. DO NOT read or modify other stages' status fields. |
 | Stage 02 blend | `characters/<id>/02-blend/<id>.blend` | full scene | Source geometry + materials |
 | Stage 02 scene manifest | `characters/<id>/02-blend/blend_manifest.json` | `scene`, `hidden_non_lod0` | Determines which meshes are LOD0 (exportable) |
+
+## Preconditions (file existence only)
+
+Verify the following files exist on disk before running. Do **not** read
+prior-stage `status` fields from the manifest — files on disk are
+ground truth:
+
+- `characters/<id>/02-blend/<id>.blend`
+- `characters/<id>/02-blend/blend_manifest.json`
+
+If either is missing, abort with an actionable message ("stage 02
+output missing: <path> — run stage 02 first"). Do **not** attempt to
+fix or retroactively mark other stages' status.
 
 ## Process
 
@@ -37,9 +50,17 @@ compressed with Draco.
      - `export_image_format='AUTO'` (keeps PNG/JPEG per source)
    - Writes `<id>.glb` + `glb_manifest.json`.
 4. Launcher blocks until Blender exits 0.
-5. Update `characters/<id>/manifest.json`:
-   - `stages.03_glb_export.status = "done"` on success, `"failed"` with errors otherwise.
-   - `stages.03_glb_export.completed_at = <ISO timestamp>`.
+5. Update `characters/<id>/manifest.json` — **only** the
+   `stages.03_glb_export` block. Do not read, modify, or "fix" any
+   other stage's status, timestamps, or errors. The dispatcher (Opus)
+   owns those fields:
+   - `stages.03_glb_export.status = "done"` on success
+   - `stages.03_glb_export.started_at = <ISO timestamp at launch>`
+   - `stages.03_glb_export.completed_at = <ISO timestamp at finish>`
+   - `stages.03_glb_export.errors = []`
+6. On failure: `stages.03_glb_export.status = "failed"`, append
+   actionable message to `stages.03_glb_export.errors[]`, leave
+   artifacts in place. Touch only this stage's block.
 
 ## Outputs
 

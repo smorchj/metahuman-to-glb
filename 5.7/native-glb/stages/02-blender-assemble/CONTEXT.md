@@ -11,12 +11,26 @@ and saves a `.blend` for stage 03.
 | Source | File / Location | Section | Why |
 |---|---|---|---|
 | Workspace config | `_config/pipeline.yaml` | `blender_exe` | Blender executable path |
-| Character manifest | `characters/<id>/manifest.json` | `stages.01_unreal_glb_export.status` | Verify stage 01 done |
+| Character manifest | `characters/<id>/manifest.json` | `character_id` | Identify the character only — DO NOT read or modify other stages' status fields |
 | Stage 01 manifest | `characters/<id>/01-glb/mh_manifest.json` | `assets[]`, `arkit_sources`, `sidecar_textures`, `groom_materials` | What to import + ARKit source paths + groom MI params |
 | Stage 01 GLBs | `characters/<id>/01-glb/*.glb` | all | Per-mesh geometry + textures (no morphs in this pass) |
 | Stage 01 LSE FBX | `characters/<id>/01-glb/LS_arkit_full.fbx` | full | Mesh + skeleton + per-pose bone keyframes — the ARKit shape-key source |
 | Stage 01 pose list | `characters/<id>/01-glb/arkit_pose_names.json` | full | Maps frame N → ARKit pose name |
 | Stage 01 textures | `characters/<id>/01-glb/textures/*.png` | hair / brow / lash atlases | Wired onto reconstructed groom materials |
+
+## Preconditions (file existence only)
+
+Verify the following files exist on disk before running. Do **not** read
+prior-stage `status` fields from the manifest — manifest state can be
+stale; files on disk are ground truth:
+
+- `characters/<id>/01-glb/mh_manifest.json`
+- `characters/<id>/01-glb/LS_arkit_full.fbx` (must be > 5 MB)
+- `characters/<id>/01-glb/arkit_pose_names.json`
+
+If any input is missing, abort with an actionable message ("stage 01
+output missing: <path> — run stage 01 first"). Do **not** attempt to
+fix or retroactively mark other stages' status.
 
 ## Process
 
@@ -53,11 +67,17 @@ and saves a `.blend` for stage 03.
      shader injection).
 5. Verify outputs (Outputs table). Required: `<id>.blend`, `mh_materials.json`,
    `blend_manifest.json`.
-6. Update `characters/<id>/manifest.json`:
+6. Update `characters/<id>/manifest.json` — **only** the
+   `stages.02_blender_assemble` block. Do not read, modify, or "fix"
+   any other stage's status, timestamps, or errors. The dispatcher
+   (Opus) owns those fields:
    - `stages.02_blender_assemble.status = "done"` on success
-   - `stages.02_blender_assemble.completed_at = <ISO timestamp>`
-7. On failure: `status = "failed"`, append actionable message to
-   `errors[]`, leave artifacts in place.
+   - `stages.02_blender_assemble.started_at = <ISO timestamp at launch>`
+   - `stages.02_blender_assemble.completed_at = <ISO timestamp at finish>`
+   - `stages.02_blender_assemble.errors = []`
+7. On failure: `stages.02_blender_assemble.status = "failed"`, append
+   actionable message to `stages.02_blender_assemble.errors[]`, leave
+   artifacts in place. Still touch only this stage's block.
 
 ## Outputs
 

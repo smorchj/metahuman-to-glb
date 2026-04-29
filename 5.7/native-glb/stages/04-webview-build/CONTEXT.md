@@ -10,10 +10,23 @@ web component.
 | Source | File / Location | Section | Why |
 |---|---|---|---|
 | Workspace config | `_config/pipeline.yaml` | `characters_dir` | Where characters live |
-| Character manifest | `characters/<id>/manifest.json` | `character_id`, `stages.03_glb_export.status` | Which characters to publish |
+| Character manifest | `characters/<id>/manifest.json` | `character_id` | Identify the character. DO NOT read or modify other stages' status fields. |
 | Stage 03 GLB | `characters/<id>/03-glb/<id>.glb` | binary | The asset to host |
 | Stage 03 manifest | `characters/<id>/03-glb/glb_manifest.json` | `tri_count`, `file_size_bytes` | Metadata shown on gallery |
 | Page templates | `stages/04-webview-build/templates/` | all | HTML/CSS scaffolding |
+
+## Preconditions (file existence only)
+
+Verify the following files exist on disk before running. Do **not** read
+prior-stage `status` fields from the manifest — files on disk are
+ground truth:
+
+- `characters/<id>/03-glb/<id>.glb`
+- `characters/<id>/03-glb/glb_manifest.json`
+
+If either is missing, abort with an actionable message ("stage 03
+output missing: <path> — run stage 03 first"). Do **not** attempt to
+fix or retroactively mark other stages' status.
 
 ## Process
 
@@ -30,9 +43,17 @@ web component.
    - Copies `templates/style.css` → `docs/assets/style.css`.
    - Writes/overwrites `docs/.nojekyll` (prevents GitHub's Jekyll from
      dropping paths starting with `_`).
-3. Update `characters/<id>/manifest.json`:
-   - `stages.04_webview_build.status = "done"` on success.
-   - `stages.04_webview_build.completed_at = <ISO timestamp>`.
+3. Update `characters/<id>/manifest.json` — **only** the
+   `stages.04_webview_build` block. Do not read, modify, or "fix" any
+   other stage's status, timestamps, or errors. The dispatcher (Opus)
+   owns those fields:
+   - `stages.04_webview_build.status = "done"` on success
+   - `stages.04_webview_build.started_at = <ISO timestamp at launch>`
+   - `stages.04_webview_build.completed_at = <ISO timestamp at finish>`
+   - `stages.04_webview_build.errors = []`
+4. On failure: `stages.04_webview_build.status = "failed"`, append
+   actionable message to `stages.04_webview_build.errors[]`, leave
+   artifacts in place. Touch only this stage's block.
 
 ## Outputs
 

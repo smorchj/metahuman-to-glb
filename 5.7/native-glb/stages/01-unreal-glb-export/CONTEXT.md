@@ -15,16 +15,29 @@ commandlet locks the project file).
 | Source | File / Location | Section | Why |
 |---|---|---|---|
 | Workspace config | `_config/pipeline.yaml` | `ue_by_version.5.7`, `glb_constraints` | UE project + editor exe paths, max texture size |
-| Character manifest | `characters/<id>/manifest.json` | `stages.00_unreal_assemble.status`, `output_name` | Verify stage 00 done; locate `/Game/<output_name>/` in UE |
+| Character manifest | `characters/<id>/manifest.json` | `character_id`, `output_name` (or fallback to `<id>`) | Identify the character + UE folder. DO NOT read or modify other stages' status fields. |
 | Character source | `characters/<id>/source/README.md` | all | Human-readable context only |
 | Engine asset | `/MetaHumanCharacter/Face/ARKit/AS_MetaHuman_ARKit_Mapping` | full | Source AnimSequence (24fps, 66 keyframes, 1-per-pose) — the curve-driven ARKit mapping |
 | Engine asset | `/MetaHumanCharacter/Face/ARKit/PA_MetaHuman_ARKit_Mapping` | pose names | PoseAsset whose names define the ARKit pose order Stage 02 expects |
 
+## Preconditions (UE-side, not manifest)
+
+Verify the UE project has `/Game/<output_name>/` containing assembled
+MetaHuman assets (face + body SkeletalMesh, hair-card StaticMeshes).
+This is what stage 00 produces. Do **not** read the manifest's
+`stages.00_unreal_assemble.status` field — it can be stale; the
+project state on disk is ground truth.
+
+If `/Game/<output_name>/` is missing, abort with an actionable message
+("UE assets not found at /Game/<output_name>/ — run stage 00 first").
+Do not "fix" any manifest field.
+
 ## Process
 
-1. Read `_config/pipeline.yaml` and `characters/<id>/manifest.json`.
-2. Verify `stages.00_unreal_assemble.status == "done"`. If not, abort with
-   actionable msg.
+1. Read `_config/pipeline.yaml` and `characters/<id>/manifest.json`
+   (only to learn the character id / output_name — do not read or write
+   other stages' status).
+2. Verify the precondition above (UE project has `/Game/<output_name>/`).
 3. Invoke launcher: `tools/run_export.ps1 -Char <id>`. It runs:
    `UnrealEditor-Cmd.exe <uproject> -run=pythonscript -script="C:/tmp/mh/export_glb.py -- --char=<id>" -AllowCommandletRendering -unattended -nosplash`
    `-AllowCommandletRendering` is mandatory: the GLTFExporter
@@ -35,11 +48,17 @@ commandlet locks the project file).
 5. Verify outputs (Outputs table). Required: every `*.glb` plus the
    ARKit sources (`LS_arkit_full.fbx`, `arkit_pose_names.json`,
    `arkit_pose_curves.json`, `mh_manifest.json`).
-6. If validation passes, update `characters/<id>/manifest.json`:
+6. If validation passes, update `characters/<id>/manifest.json` —
+   **only** the `stages.01_unreal_glb_export` block. Do not read,
+   modify, or "fix" any other stage's status, timestamps, or errors.
+   The dispatcher (Opus) owns those fields:
    - `stages.01_unreal_glb_export.status = "done"`
-   - `stages.01_unreal_glb_export.completed_at = <ISO timestamp>`
-7. On failure: set `status = "failed"`, append actionable message to
-   `errors[]`, leave artifacts in place.
+   - `stages.01_unreal_glb_export.started_at = <ISO timestamp at launch>`
+   - `stages.01_unreal_glb_export.completed_at = <ISO timestamp at finish>`
+   - `stages.01_unreal_glb_export.errors = []`
+7. On failure: `stages.01_unreal_glb_export.status = "failed"`, append
+   actionable message to `stages.01_unreal_glb_export.errors[]`, leave
+   artifacts in place. Touch only this stage's block.
 
 ## Outputs
 
