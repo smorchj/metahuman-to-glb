@@ -36,13 +36,36 @@ def _log(m): print(f"[bootstrap] {m}", flush=True)
 
 
 def _strip_shell_prefix(asset_path: str) -> str:
-    """Git Bash on Windows mangles paths starting with `/Game/...` by
-    prepending the MSYS root (e.g. `C:/Program Files/Git/Game/Ada`).
-    If the path contains `/Game/` anywhere, take from there."""
-    s = asset_path.strip()
+    """Normalize various asset-path inputs to a canonical /Game/... UE
+    asset path. Handles:
+
+    1. Git Bash MSYS mangling — paths like
+       `/C:/Program Files/Git/Game/Ada/MHC_Ada` are stripped back to
+       `/Game/Ada/MHC_Ada`.
+
+    2. Disk paths to a .uasset inside the project's `Content/` folder
+       — e.g. `C:/Users/me/Documents/Unreal Projects/MH/Content/karl.uasset`
+       maps to `/Game/karl`. Any subfolders survive
+       (`.../Content/Heroes/karl.uasset` -> `/Game/Heroes/karl`).
+       Both forward and backward slashes are accepted.
+
+    3. Already-canonical `/Game/...` paths — pass through unchanged.
+    """
+    s = asset_path.strip().replace("\\", "/")
+
+    # Git Bash MSYS mangling: anywhere `/Game/` appears, take from there.
     idx = s.find("/Game/")
     if idx > 0:
         return s[idx:]
+
+    # Disk path with a `/Content/` segment → re-root under `/Game/`.
+    cidx = s.lower().find("/content/")
+    if cidx >= 0:
+        rest = s[cidx + len("/content/"):]
+        if rest.lower().endswith(".uasset"):
+            rest = rest[: -len(".uasset")]
+        return "/Game/" + rest.lstrip("/")
+
     return s
 
 
