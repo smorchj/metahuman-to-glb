@@ -1,0 +1,37 @@
+{
+  "character_id": "<id>",
+  "source": "engine_mhc",
+  "ue_version": "5.6.1",
+  "mh_folder": "/Game/MetaHumans/<Name>",
+  "archetype": null,
+  "stages": {
+    "01_fbx_export": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "output_dir": "01-fbx/",
+      "errors": []
+    },
+    "02_blender_setup": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "output_dir": "02-blend/",
+      "errors": []
+    },
+    "03_glb_export": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "output_dir": "03-glb/",
+      "errors": []
+    },
+    "04_webview_build": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "output_dir": "../../docs/characters/",
+      "errors": []
+    }
+  }
+}
