@@ -173,8 +173,9 @@ PowerShell launcher:
 ## Status
 
 This is a **fun side project** that grew up. Currently running against
-**Ada** and **Taro** from Epic's MetaHuman demo set — both are in the
-live gallery. Tested in Safari on iPhone X.
+**Bo** and **Bruce** (5.7 native-glb) and **Ada** and **Taro** (5.6 cinematic)
+from Epic's MetaHuman demo set — all four are in the live gallery.
+Tested in Safari on iPhone X.
 
 The 5.7 native-glb pipeline ships:
 
@@ -184,14 +185,14 @@ The 5.7 native-glb pipeline ships:
   eyeBlinkLeft ~16mm, mouthSmileLeft ~18mm, etc.)
 - Eyebrow / mustache / beard card meshes follow the face on every
   shape via inverse-distance-weighted shape-key propagation
-- Hair-card material reconstruction from sidecar atlases
+- Hair-card rendering: alpha-to-coverage primary (single-pass, depth-writes,
+  mobile-compatible), two-pass blend fallback, per-strand root darkening +
+  tint variance from atlas channels, anisotropic specular along strand tangent.
+  Per-character and per-material overrides (mode, colour, density).
 - Texture cap at 1024 px, Draco mesh compression, ~40 MB final GLB
 - MediaPipe FaceLandmarker driver in the viewer for live face capture
 
 Known gaps:
-
-- **Hair shader needs work.** Current hair cards use basic
-  alpha-blended rendering. Needs better strand-level shading.
 - **Eyelash textures seem low-res.** Coverage texture may need
   exemption from the 1024 px downsample cap or a higher-quality source.
 - **Eye occlusion has no alpha mask.** The eyeshell submesh renders
