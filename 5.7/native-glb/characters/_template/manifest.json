@@ -1,0 +1,44 @@
+{
+  "character_id": "<id>",
+  "source": "engine_mhc",
+  "ue_version": "5.7",
+  "mh_folder": "/Game/<Name>",
+  "output_name": "<Name>",
+  "stages": {
+    "00_unreal_assemble": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "output_dir": null,
+      "errors": []
+    },
+    "01_unreal_glb_export": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "output_dir": "01-glb/",
+      "errors": []
+    },
+    "02_blender_assemble": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "output_dir": "02-blend/",
+      "errors": []
+    },
+    "03_glb_export": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "output_dir": "03-glb/",
+      "errors": []
+    },
+    "04_webview_build": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "output_dir": "../../docs/characters/",
+      "errors": []
+    }
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "schema": "arkit52_deltas_v1",
+  "generated_at_utc": "2026-04-18T17:54:39Z",
+  "source": {
+    "fbx_basename": "metaHumanHead_52shapekeys_01.fbx",
+    "origin": "https://dragonboots.gumroad.com/l/metahumanhead",
+    "license_note": "Author states 'for study purposes only'. Not a formal licence; included in this repo under the same MIT umbrella as the rest of the pipeline. Numeric deltas only (no FBX)."
+  },
+  "apple_arkit_spec_url": "https://developer.apple.com/documentation/arkit/arfaceanchor/blendshapelocation",
+  "notes": [
+    "tongueOut is absent from this reference FBX (51 head keys, not 52).",
+    "MH face topology + UV unwrap is stable across characters at a given LOD, so these deltas transfer via per-vertex UV correspondence (see stages/02-blender-setup/tools/apply_arkit52.py).",
+    "Regions are applied to our pipeline's combined face mesh via material slot \u2192 vertex membership."
+  ],
+  "regions": {
+    "head": {
+      "vert_count": 24049,
+      "poly_count": 24002,
+      "key_count": 51,
+      "keys": [
+        "eyeBlinkLeft",
+        "eyeLookDownLeft",
+        "eyeLookInLeft",
+        "eyeLookOutLeft",
+        "eyeLookUpLeft",
+        "eyeSquintLeft",
+        "eyeWideLeft",
+        "eyeBlinkRight",
+        "eyeLookDownRight",
+        "eyeLookInRight",
+        "eyeLookOutRight",
+        "eyeLookUpRight",
+        "eyeSquintRight",
+        "eyeWideRight",
+        "jawForward",
+        "jawLeft",
+        "jawRight",
+        "jawOpen",
+        "mouthClose",
+        "mouthFunnel",
+        "mouthPucker",
+        "mouthRight",
+        "mouthLeft",
+        "mouthSmileLeft",
+        "mouthSmileRight",
+        "mouthFrownLeft",
+        "mouthFrownRight",
+        "mouthDimpleLeft",
+        "mouthDimpleRight",
+        "mouthStretchLeft",
+        "mouthStretchRight",
+        "mouthRollLower",
+        "mouthRollUpper",
+        "mouthShrugLower",
+        "mouthShrugUpper",
+        "mouthPressLeft",
+        "mouthPressRight",
+        "mouthLowerDownLeft",
+        "mouthLowerDownRight",
+        "mouthUpperUpLeft",
+        "mouthUpperUpRight",
+        "browDownLeft",
+        "browDownRight",
+        "browInnerUp",
+        "browOuterUpLeft",
+        "browOuterUpRight",
+        "cheekPuff",
+        "cheekSquintLeft",
+        "cheekSquintRight",
+        "noseSneerLeft",
+        "noseSneerRight"
+      ]
+    },
+    "teeth": {
+      "vert_count": 4246,
+      "poly_count": 4288,
+      "key_count": 5,
+      "keys": [
+        "jawForward",
+        "jawLeft",
+        "jawRight",
+        "jawOpen",
+        "mouthClose"
+      ]
+    },
+    "eye_left": {
+      "vert_count": 770,
+      "poly_count": 800,
+      "key_count": 4,
+      "keys": [
+        "eyeLookDownLeft",
+        "eyeLookInLeft",
+        "eyeLookOutLeft",
+        "eyeLookUpLeft"
+      ]
+    },
+    "eye_right": {
+      "vert_count": 770,
+      "poly_count": 800,
+      "key_count": 4,
+      "keys": [
+        "eyeLookDownRight",
+        "eyeLookInRight",
+        "eyeLookOutRight",
+        "eyeLookUpRight"
+      ]
+    }
+  }
+}
