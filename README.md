@@ -190,10 +190,10 @@ The 5.7 native-glb pipeline ships:
 
 Known gaps:
 
-- **Eye shader is bare-minimum.** Iris / limbus / pupil / sclera-vein
-  math works ish, but refraction, caustics, and sub-surface on the
-  caruncle are faked or hidden
-  ([#5](https://github.com/smorchj/metahuman-to-glb/issues/5)).
+- **Hair shader needs work.** Current hair cards use basic
+  alpha-blended rendering. Needs better strand-level shading.
+- **Eyelash textures seem low-res.** Coverage texture may need
+  exemption from the 1024 px downsample cap or a higher-quality source.
 - **Eye occlusion has no alpha mask.** The eyeshell submesh renders
   as a flat 40% dark layer across the entire eye — needs MH's
   eyeshell occlusion mask wired as `alphaMap`
