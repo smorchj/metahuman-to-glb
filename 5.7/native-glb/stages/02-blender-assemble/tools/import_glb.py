@@ -133,7 +133,16 @@ def _synth_hair_color(mi_params):
     scalars = (mi_params or {}).get("scalars") or {}
     vectors = (mi_params or {}).get("vectors") or {}
     if "hairMelanin" not in scalars:
-        # MH plugin default for unbiased hair is medium-brown.
+        # No melanin override on the MI. Some MH facial-hair MIs (e.g.
+        # MI_WI_Beard_M_MuttonChops_Hair) ship with only `hairDye` and
+        # no melanin scalar — for those, the dye IS the color (it's
+        # multiplied against a white base by the MH shader). Fall
+        # through to that before defaulting to the plugin's medium-
+        # brown unbiased fallback.
+        dye = vectors.get("hairDye")
+        if dye and len(dye) >= 3 and dye[3] > 0.0:
+            clamp = lambda x: max(0.0, min(1.0, float(x)))
+            return (clamp(dye[0]), clamp(dye[1]), clamp(dye[2]), 1.0)
         return (0.18, 0.10, 0.05, 1.0)
     t = max(0.0, min(1.0, float(scalars["hairMelanin"])))
     light = (1.0 - t) ** 1.5
@@ -198,11 +207,20 @@ def _wire_card_materials(in_root, mh_manifest):
 
     def _pick_groom_mi(mesh_name_low):
         """Pick the MI most likely to drive this mesh's material.
-        For hair_s_coil_cardsmesh_* -> MI_WI_Hair_S_Coil_Hair_Cards.
-        For eyebrows_m_slightarch_* -> MI_WI_Eyebrows_M_SlightArch_*.
+        For hair_s_coil_cardsmesh_*    -> MI_WI_Hair_S_Coil_Hair_Cards.
+        For eyebrows_m_slightarch_*    -> MI_WI_Eyebrows_M_SlightArch_*.
+        For beard_m_muttonchops_*      -> MI_WI_Beard_M_MuttonChops_Hair.
+        For mustache_s_horseshoe_*     -> MI_WI_Mustache_S_Horseshoe_Hair.
         """
-        # Strip _CardsMesh_GroupN_LODN tail to get the groom prefix.
-        prefix = mesh_name_low.split("_cardsmesh_")[0]
+        # Strip the trailing _CardsMesh_GroupN_LODN (hair/eyebrows) or
+        # _CardMesh_GroupN_LODN (beard/mustache) to get the groom-style
+        # prefix. Splitting on _cardsmesh_ only would leave beard/
+        # mustache mesh names un-stripped and fail the MI match.
+        prefix = mesh_name_low
+        for tail in ("_cardsmesh_", "_cardmesh_"):
+            if tail in prefix:
+                prefix = prefix.split(tail)[0]
+                break
         # Best match: MI_WI_<prefix>_*Cards (hair) or *Hair (brows/lashes)
         candidates = []
         for mi_name, params in groom_mis.items():
@@ -241,12 +259,18 @@ def _wire_card_materials(in_root, mh_manifest):
         return None
 
     fixed = 0
-    # ---- Pass 1: hair-card + eyebrow CardsMesh slots ----
+    # ---- Pass 1: hair / eyebrow / beard / mustache card-mesh slots ----
+    # MH naming is inconsistent: Hair_*/Eyebrows_* meshes are named
+    # "*_CardsMesh_*" (plural), but Beard_*/Mustache_* meshes are named
+    # "*_CardMesh_*" (singular). Match both — without this, beard and
+    # mustache cards arrive in the scene unwired and render with whatever
+    # GLTFExporter dropped on them (typically a flat gray default), even
+    # though their Attribute atlases are sitting in the sidecar pool.
     for obj in bpy.data.objects:
         if obj.type != "MESH":
             continue
         name_low = obj.name.lower()
-        if "cardsmesh" not in name_low:
+        if "cardsmesh" not in name_low and "cardmesh" not in name_low:
             continue
         for slot in obj.material_slots:
             mat = slot.material
@@ -499,7 +523,13 @@ def _emit_material_spec(out_root, mh_manifest):
         mn = mat.name
         ml = mn.lower()
         if ml.endswith("_cardmat"):
-            # Hair / eyebrow card material
+            # Hair / eyebrow / beard / mustache card material. The
+            # _CardMat suffix is added by Pass 1 of _wire_card_materials,
+            # which now accepts both CardsMesh (hair/eyebrows) and
+            # CardMesh (beard/mustache) source meshes — so beard and
+            # mustache materials need their own branch here too, or
+            # stage 04's viewer won't apply hair-shader injection to
+            # them and they'll render with the GLTFExporter default.
             if ml.startswith("hair_"):
                 stem = _find_stem(["Hair_S_Coil_CardsAtlas_Attribute",
                                    "Hair_"])
@@ -508,6 +538,12 @@ def _emit_material_spec(out_root, mh_manifest):
                 stem = _find_stem(["Eyebrows_M_SlightArch_CardsAtlas_Attribute",
                                    "Eyebrows_"])
                 color = _hair_color_for("mi_wi_eyebrows_") or [0.18, 0.10, 0.05, 1.0]
+            elif ml.startswith("beard_"):
+                stem = _find_stem(["Beard_"])
+                color = _hair_color_for("mi_wi_beard_") or [0.18, 0.10, 0.05, 1.0]
+            elif ml.startswith("mustache_") or ml.startswith("moustache_"):
+                stem = _find_stem(["Mustache_"])
+                color = _hair_color_for("mi_wi_mustache_") or [0.18, 0.10, 0.05, 1.0]
             else:
                 continue
             if stem is None:
@@ -1068,9 +1104,26 @@ def _apply_arkit_to_grooms(face_obj):
     _log(f"  grooms: face={face_obj.name} basis_verts={basis_world.shape[0]} "
          f"keys={len(face_deltas_world)} grooms={[g.name for g in grooms]}")
 
-    # ---- KD-tree over face basis in world space ----
-    tree = KDTree(basis_world.shape[0])
+    # ---- Exclude eyelash verts from the KD-tree ----
+    # Eyelashes live as a material slot on the face mesh.  If eyebrow
+    # card verts near the lid pick up lash face-verts as neighbours,
+    # their shape keys follow lash deformation instead of skin.
+    lash_vert_ids = set()
+    for slot_idx, slot in enumerate(face_obj.material_slots):
+        if slot.material and "lash" in slot.material.name.lower():
+            for poly in mesh.polygons:
+                if poly.material_index == slot_idx:
+                    lash_vert_ids.update(poly.vertices)
+    if lash_vert_ids:
+        _log(f"  grooms: excluding {len(lash_vert_ids)} eyelash verts "
+             f"from KD-tree")
+
+    # ---- KD-tree over face basis in world space (sans lash verts) ----
+    tree_size = basis_world.shape[0] - len(lash_vert_ids)
+    tree = KDTree(tree_size)
     for i, p in enumerate(basis_world):
+        if i in lash_vert_ids:
+            continue
         tree.insert(Vector((float(p[0]), float(p[1]), float(p[2]))), i)
     tree.balance()
 
@@ -1446,6 +1499,93 @@ def _bake_arkit_shape_keys(in_root, mh_manifest):
     return len(baked_names)
 
 
+_CLEARANCE_PREFIXES = (
+    "Hair_", "Eyebrows_", "Mustache_", "Moustache_", "Beard_",
+    "Goatee_", "Stubble_", "Sideburns_", "Fuzz_",
+)
+# Minimum clearance in local units (metres for GLB meshes). Only
+# vertices actually behind the face (signed_dist < 0) are pushed.
+# They land at this distance in front of the surface: 0.1 mm is
+# enough to clear depth fighting without visible lift.
+_MIN_CLEARANCE_M = 0.0001
+
+
+def _fix_hair_face_clearance():
+    """Push hair card vertices that clip behind the face mesh outward.
+
+    After FBX/GLB import, some hair card verts sit fractionally behind
+    the face surface (up to ~0.014 m on bruce's mustache). The opaque
+    face hides those fragments, making one side of the facial hair look
+    thinner. This step raycasts each card vert against the face BVH and
+    nudges embedded verts outward along the face normal to ensure
+    minimum clearance.
+
+    Must run AFTER all meshes are imported and ARKit shape keys are
+    baked (shape-key bake may move face verts slightly), but BEFORE
+    the .blend is saved.
+    """
+    from mathutils.bvhtree import BVHTree
+
+    # Find the main face mesh
+    face_obj = None
+    for o in bpy.data.objects:
+        if o.type != "MESH":
+            continue
+        if "facemesh" in o.name.lower() and "cardsmesh" not in o.name.lower():
+            if face_obj is None or len(o.data.vertices) > len(face_obj.data.vertices):
+                face_obj = o
+    if face_obj is None:
+        _log("  clearance: no face mesh found, skipping")
+        return 0
+
+    # BVHTree in face-local space
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    bvh = BVHTree.FromObject(face_obj, depsgraph)
+
+    face_w = face_obj.matrix_world
+    face_w_inv = face_w.inverted()
+
+    cards = [o for o in bpy.data.objects
+             if o.type == "MESH"
+             and any(o.name.startswith(p) for p in _CLEARANCE_PREFIXES)]
+    if not cards:
+        _log("  clearance: no hair card meshes found")
+        return 0
+
+    total_fixed = 0
+    for card_obj in cards:
+        card_w = card_obj.matrix_world
+        card_w_inv = card_w.inverted()
+        mesh = card_obj.data
+        fixed = 0
+        for v in mesh.vertices:
+            # Card vert in face-local space
+            world_pos = card_w @ v.co
+            face_local = face_w_inv @ world_pos
+
+            nearest, normal, _idx, _dist = bvh.find_nearest(face_local)
+            if nearest is None:
+                continue
+
+            # Signed distance: positive = in front, negative = behind
+            offset = face_local - nearest
+            signed_dist = offset.dot(normal)
+
+            if signed_dist < 0:
+                push = _MIN_CLEARANCE_M - signed_dist  # brings to +0.1mm
+                new_face_local = face_local + normal * push
+                new_world = face_w @ new_face_local
+                v.co = card_w_inv @ new_world
+                fixed += 1
+
+        if fixed:
+            mesh.update()
+        _log(f"  clearance: {card_obj.name} "
+             f"pushed {fixed}/{len(mesh.vertices)} verts")
+        total_fixed += fixed
+    return total_fixed
+
+
 def _remove_gltf_placeholder_empties():
     """Blender's glTF importer spawns `Icosphere` meshes for glTF nodes
     that have no geometry/light/camera (bone sockets, empty transforms).
@@ -1581,6 +1721,10 @@ def main():
     removed_placeholders = _remove_gltf_placeholder_empties()
     if removed_placeholders:
         _log(f"removed {removed_placeholders} glTF placeholder Icosphere(s)")
+
+    clearance_fixed = _fix_hair_face_clearance()
+    if clearance_fixed:
+        _log(f"pushed {clearance_fixed} hair card vert(s) to clear face clipping")
 
     # Save blend
     blend_path = os.path.join(out_root, f"{args.char}.blend")

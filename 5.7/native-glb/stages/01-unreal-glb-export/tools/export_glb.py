@@ -65,6 +65,17 @@ def _iso_now():
 
 def _list_under(folder, class_name):
     ar = unreal.AssetRegistryHelpers.get_asset_registry()
+    # Force-scan the folder before filtering. UE's AssetRegistry lazy-
+    # loads sub-paths; without an explicit scan, /Game/<char>/Body and
+    # /Game/<char>/Outfits can silently return 0 hits even though the
+    # uassets exist on disk (the FaceMesh tends to be auto-loaded via
+    # editor refs, the body+outfits often aren't). That produces a
+    # partial export that's only visible if you cross-check disk vs.
+    # manifest — a regression we saw on Karl.
+    try:
+        ar.scan_paths_synchronous([folder], force_rescan=True)
+    except Exception as e:
+        _log(f"  scan_paths_synchronous({folder}) raised: {e}")
     try:
         filt = unreal.ARFilter(
             package_paths=[folder],
@@ -78,6 +89,7 @@ def _list_under(folder, class_name):
             recursive_paths=True,
         )
     out = []
+    dropped = []
     for a in ar.get_assets(filt) or []:
         try:
             obj = a.get_asset()
@@ -86,10 +98,15 @@ def _list_under(folder, class_name):
         if obj is None:
             try:
                 obj = unreal.EditorAssetLibrary.load_asset(f"{a.package_name}.{a.asset_name}")
-            except Exception:
+            except Exception as e:
                 obj = None
+                dropped.append(f"{a.package_name}.{a.asset_name} ({e})")
         if obj is not None:
             out.append(obj)
+        elif a not in (None,):
+            dropped.append(f"{getattr(a, 'package_name', '?')}.{getattr(a, 'asset_name', '?')}")
+    if dropped:
+        _log(f"  WARN: _list_under({folder}, {class_name}) dropped {len(dropped)} asset(s): {dropped}")
     return out
 
 
@@ -581,14 +598,50 @@ def main():
     out_dir = _ensure_dir(os.path.join(char_root, "01-glb"))
     textures_dir = _ensure_dir(os.path.join(out_dir, "textures"))
 
+    # Clear stale GLB outputs before re-running. Without this, a partial
+    # re-run (e.g. AR misses an asset, or _export_one fails for one mesh)
+    # leaves orphan GLBs from a previous successful run on disk while
+    # the new manifest references this run's subset only — masking the
+    # incompleteness from any downstream check that lists the dir.
+    # Manifest is the single source of truth for what was exported.
+    import glob as _glob
+    for stale in _glob.glob(os.path.join(out_dir, "*.glb")):
+        try:
+            os.remove(stale)
+        except Exception as e:
+            _log(f"  could not remove stale {stale}: {e}")
+
     # SkeletalMeshes — body, face, outfits
     skm = _list_under(mh_folder, "SkeletalMesh")
-    # StaticMeshes — hair card fallbacks under /Game/<Name>/Grooms/
-    stm_all = _list_under(mh_folder, "StaticMesh")
-    hair_cards = [m for m in stm_all
-                  if "CardsMesh" in m.get_name() and "_LOD0" in m.get_name()]
+    skm_names = [a.get_name() for a in skm]
+    # A MetaHuman character ALWAYS has a face mesh + body mesh; outfits
+    # are optional (base humans without clothes don't ship one). If
+    # face or body are missing here, the AR scan returned an incomplete
+    # listing — fail loud rather than silently producing a partial
+    # export with a face but no body.
+    have_face = any("FaceMesh" in n for n in skm_names)
+    have_body = any("BodyMesh" in n for n in skm_names)
+    if not (have_face and have_body):
+        raise RuntimeError(
+            f"AssetRegistry returned incomplete SkeletalMesh list under "
+            f"{mh_folder}: {skm_names} (face={have_face}, body={have_body}). "
+            f"Both FaceMesh and BodyMesh are required for a MetaHuman. "
+            f"Re-run stage 00 to refresh /Game/<char>/, or check that the "
+            f"MetaHuman build actually completed and emitted a body mesh.")
 
-    _log(f"found {len(skm)} SkeletalMesh(es) + {len(hair_cards)} hair-card StaticMesh(es)")
+    # StaticMeshes — groom card fallbacks under /Game/<Name>/Grooms/.
+    # MH naming is inconsistent: Hair_*/Eyebrows_* use plural "CardsMesh"
+    # but Beard_*/Mustache_* use singular "CardMesh". Match both, plus
+    # the LOD0 variant only (other LODs are gitignored downstream).
+    stm_all = _list_under(mh_folder, "StaticMesh")
+    hair_cards = [
+        m for m in stm_all
+        if (("CardsMesh" in m.get_name()) or ("CardMesh" in m.get_name()))
+        and "_LOD0" in m.get_name()
+    ]
+
+    _log(f"found {len(skm)} SkeletalMesh(es) ({skm_names}) + "
+         f"{len(hair_cards)} hair-card StaticMesh(es)")
 
     opts = _make_gltf_options()
     manifest_records = []
@@ -820,7 +873,10 @@ def _infer_role(asset):
     if "facemesh" in n:   return "face"
     if "bodymesh" in n:   return "body"
     if "outfit" in n:     return "outfit"
-    if "cardsmesh" in n:  return "hair"
+    # MH naming: Hair_*/Eyebrows_* use plural "cardsmesh"; Beard_*/
+    # Mustache_* use singular "cardmesh". Both are facial/head grooms
+    # that stage 02 parents onto the head bone — same role.
+    if "cardsmesh" in n or "cardmesh" in n: return "hair"
     return "other"
 
 

@@ -6,6 +6,18 @@ propagates those shape keys onto facial-groom card meshes (eyebrows /
 mustache / beard), wires up hair-card materials from sidecar textures,
 and saves a `.blend` for stage 03.
 
+## Scope (hard rule)
+
+You run this stage's launcher and verify its outputs. Nothing else.
+
+Do **not** modify pipeline code: `stages/*/tools/*.py`, `tools/*.ps1`,
+`_config/`, `RUN.md`, `CLAUDE.md`. If a script throws or produces wrong
+output, surface the actual error to the operator. Silently working
+around it (try/except around imports, skipping failed assets, lowering
+thresholds) turns a fixable bug into an invisible regression. Do not
+touch other stages' contracts, code, or manifest blocks, or other
+characters' artifacts.
+
 ## Inputs
 
 | Source | File / Location | Section | Why |

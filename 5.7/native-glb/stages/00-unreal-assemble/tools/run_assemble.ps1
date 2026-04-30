@@ -118,6 +118,31 @@ $AssetPath = "$MhFolder.$(Split-Path $MhFolder -Leaf)"
 # MetaHumanCharacter plugin).
 if ($Manifest.ue_project_path) { $UEProject = $Manifest.ue_project_path }
 
+# --- Thumbnail review (pre-build) ------------------------------------
+# Extract the Content Browser thumbnail embedded in the .uasset so
+# the operator can eyeball the character before the expensive UE
+# build cycle begins. Runs standalone Python (no UE needed).
+$ContentDir = Join-Path (Split-Path -Parent $UEProject) "Content"
+$MhRelative = ($MhFolder -replace "^/Game/", "").Replace("/", "\")
+$UassetPath = Join-Path $ContentDir "$MhRelative.uasset"
+
+$ThumbOut = Join-Path $Workspace "characters\$Char\source\thumbnail.jpg"
+$ThumbScript = Join-Path $ToolsDir "extract_thumbnail.py"
+
+if (Test-Path $UassetPath) {
+    Write-Host "[stage00] extracting thumbnail from $UassetPath"
+    & python $ThumbScript --uasset $UassetPath --out $ThumbOut
+    if ($LASTEXITCODE -eq 0) {
+        $kb = [math]::Round((Get-Item $ThumbOut).Length / 1KB)
+        Write-Host "[stage00] thumbnail ready: $ThumbOut (${kb} KB)"
+    } else {
+        Write-Host "[stage00] thumbnail extraction failed (non-fatal, continuing)"
+    }
+} else {
+    Write-Host "[stage00] .uasset not found at $UassetPath - skipping thumbnail"
+}
+# ---------------------------------------------------------------------
+
 # Pre-clean state
 if (-not (Test-Path "C:\tmp\mh")) { New-Item -ItemType Directory -Path "C:\tmp\mh" | Out-Null }
 $StatusPath = "C:/tmp/mh/status.json"
@@ -129,6 +154,12 @@ New-Item -ItemType Directory -Path $OutputDir | Out-Null
 # Copy the Python script to a spaceless path - UE -ExecCmds splits on whitespace.
 $PyScript = Join-Path $ToolsDir "build_metahuman.py"
 Copy-Item -Force $PyScript "C:\tmp\mh\build_mh.py"
+
+# Pipeline workspace path has spaces ("Metahuman to GLB"), so we can't
+# pass it through -ExecCmds positional args (the parser splits on
+# whitespace and breaks argparse). Set it as an env var; build_mh.py
+# reads it via os.environ to know where to write the reference screenshot.
+$env:MH_PIPELINE_WORKSPACE = $Workspace
 
 $ExecCmd = "py C:/tmp/mh/build_mh.py -- --asset=$AssetPath --status=$StatusPath --output-dir=$OutputDir --name=$Char --pipeline=$Pipeline --timeout=1800"
 
@@ -200,6 +231,39 @@ Write-Host "[stage00] UE process exit code: $ueCode (informational)"
 if (Test-Path $StatusPath) {
     Write-Host "[stage00] final status:"
     Get-Content $StatusPath | Write-Host
+
+    # Copy UE's reference screenshot from <UEProject>/Saved/Screenshots/
+    # Windows/ to characters/<char>/source/reference.png. The Python
+    # side (build_metahuman.py) queues HighResShot before quit_editor
+    # but can't wait for the file (would block UE's tick). We pick up
+    # here, after UE has exited and the file has actually landed.
+    try {
+        $UEProjDir = Split-Path -Parent $UEProject
+        $ShotsDir = Join-Path $UEProjDir "Saved\Screenshots\Windows"
+        if (Test-Path $ShotsDir) {
+            $newest = Get-ChildItem $ShotsDir -Filter "HighresScreenshot*.png" -ErrorAction SilentlyContinue |
+                      Where-Object { $_.LastWriteTime -gt $proc.StartTime } |
+                      Sort-Object LastWriteTime -Descending |
+                      Select-Object -First 1
+            if ($newest) {
+                $RefDir = Join-Path $Workspace "characters\$Char\source"
+                if (-not (Test-Path $RefDir)) {
+                    New-Item -ItemType Directory -Path $RefDir -Force | Out-Null
+                }
+                $RefPath = Join-Path $RefDir "reference.png"
+                Copy-Item -Force $newest.FullName $RefPath
+                $kb = [math]::Round($newest.Length / 1KB)
+                Write-Host "[stage00] reference.png copied: $($newest.Name) -> $RefPath (${kb} KB)"
+            } else {
+                Write-Host "[stage00] no new screenshot found in $ShotsDir (HighResShot may have failed)"
+            }
+        } else {
+            Write-Host "[stage00] UE screenshot dir not found: $ShotsDir"
+        }
+    } catch {
+        Write-Host "[stage00] reference screenshot copy failed: $_"
+    }
+
     try {
         $final = Get-Content $StatusPath -Raw | ConvertFrom-Json
         switch ($final.phase) {

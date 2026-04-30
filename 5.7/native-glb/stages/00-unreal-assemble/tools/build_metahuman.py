@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import sys
 import time
 import traceback
@@ -72,6 +74,141 @@ def list_skel() -> set[str]:
         if pkg and name:
             out.add(f"{pkg}.{name}")
     return out
+
+
+def _take_reference_screenshot(char_name: str) -> bool:
+    """Queue a head-and-shoulders reference render of the assembled
+    MetaHuman from the editor's perspective viewport.
+
+    Why this exists: the downstream Blender / web-viewer stages re-
+    assemble the character's materials in glTF-compatible terms
+    (Principled BSDF + procedural hair shader injection in three.js).
+    Subtle differences vs. UE's MH shader are easy to introduce and
+    hard to spot without ground truth — flat-gray hair, missing
+    scalp shadow, wrong beard saturation. Stage 04's preview compared
+    against this reference makes those regressions obvious.
+
+    Returns True if the HighResShot command was issued successfully
+    (the file lands on the next render tick). The launcher copies
+    from `<Project>/Saved/Screenshots/Windows/` to
+    `characters/<char>/source/reference.png` after UE exits — the
+    Python side does NOT block waiting for the file because
+    `time.sleep` here would freeze the editor's tick loop and prevent
+    HighResShot from ever firing.
+
+    Best-effort: failures are logged but do not fail the stage.
+    """
+    try:
+        world = unreal.EditorLevelLibrary.get_editor_world()
+        if world is None:
+            log("  reference: no editor world; skipping screenshot")
+            return False
+
+        face_path = f"/Game/{char_name}/Face/SKM_{char_name}_FaceMesh"
+        body_path = f"/Game/{char_name}/Body/SKM_{char_name}_BodyMesh"
+        face_skm = unreal.EditorAssetLibrary.load_asset(face_path)
+        body_skm = unreal.EditorAssetLibrary.load_asset(body_path)
+        if face_skm is None:
+            log(f"  reference: face SKM not found at {face_path}; skipping")
+            return False
+
+        def _spawn_skm(mesh, label):
+            actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
+                unreal.SkeletalMeshActor, unreal.Vector(0, 0, 0),
+                unreal.Rotator(0, 0, 0))
+            comp = actor.skeletal_mesh_component
+            comp.set_skeletal_mesh(mesh)
+            try: comp.set_skinned_asset_and_update(mesh)
+            except Exception: pass
+            actor.set_actor_label(f"ref_{label}")
+            return actor
+
+        def _spawn_stm(mesh, label):
+            actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
+                unreal.StaticMeshActor, unreal.Vector(0, 0, 0),
+                unreal.Rotator(0, 0, 0))
+            try:
+                actor.static_mesh_component.set_static_mesh(mesh)
+            except Exception:
+                pass
+            actor.set_actor_label(f"ref_{label}")
+            return actor
+
+        spawned_count = 1
+        _spawn_skm(face_skm, "face")
+        if body_skm is not None:
+            _spawn_skm(body_skm, "body")
+            spawned_count += 1
+        # Outfits is named '<Char>_Outfits' under /Game/<Char>/
+        outfit_path = f"/Game/{char_name}/{char_name}_Outfits"
+        outfit_skm = unreal.EditorAssetLibrary.load_asset(outfit_path)
+        if outfit_skm is not None:
+            _spawn_skm(outfit_skm, "outfits")
+            spawned_count += 1
+
+        # Hair / brows / beard / mustache cards sit under /Game/<char>/Grooms/.
+        ar = unreal.AssetRegistryHelpers.get_asset_registry()
+        try:
+            ar.scan_paths_synchronous(
+                [f"/Game/{char_name}/Grooms"], force_rescan=True)
+        except Exception:
+            pass
+        try:
+            grooms = ar.get_assets_by_path(
+                f"/Game/{char_name}/Grooms", recursive=True,
+                include_only_on_disk_assets=False) or []
+        except Exception:
+            grooms = []
+        for a in grooms:
+            cls = str(getattr(a, "asset_class_path", a).asset_name)
+            name = str(a.asset_name)
+            if cls != "StaticMesh":
+                continue
+            if not (("CardsMesh" in name) or ("CardMesh" in name)):
+                continue
+            if "_LOD0" not in name:
+                continue
+            try:
+                stm = a.get_asset()
+            except Exception:
+                stm = None
+            if stm is None:
+                continue
+            _spawn_stm(stm, name)
+            spawned_count += 1
+
+        # Position the editor's perspective viewport for a head-and-
+        # shoulders headshot. MH characters spawn at origin facing +X
+        # (UE's default forward). Place camera at +X 60 cm at head
+        # height (~165 cm) looking back along -X (yaw=180°).
+        # UE 5.7 API: param names are camera_location / camera_rotation
+        # (NOT location / rotation — that raised TypeError on the first
+        # try). Use named Rotator args too — positional order is
+        # (pitch, yaw, roll) and getting it wrong rolls the camera
+        # 90° sideways.
+        head_z = 165.0
+        unreal.EditorLevelLibrary.set_level_viewport_camera_info(
+            camera_location=unreal.Vector(60.0, 0.0, head_z),
+            camera_rotation=unreal.Rotator(pitch=0.0, yaw=180.0, roll=0.0))
+
+        # Fire HighResShot. The screenshot is queued by UE and fires on
+        # the next render tick — we MUST NOT wait for it here, because
+        # this Python is running on the game thread and any blocking
+        # call (time.sleep, file polling) freezes UE so the tick that
+        # would emit the screenshot never happens.
+        #
+        # Path is: <Project>/Saved/Screenshots/Windows/HighresScreenshotNNNNN.png
+        # The launcher copies the newest one to
+        # characters/<char>/source/reference.png after UE exits.
+        unreal.SystemLibrary.execute_console_command(
+            world, "HighResShot 1024x1024")
+        log(f"  reference: HighResShot 1024x1024 queued "
+            f"(spawned {spawned_count} actor(s) at origin); "
+            f"launcher will copy from Saved/Screenshots/")
+        return True
+    except Exception as e:
+        log(f"  reference: exception during screenshot: {e}")
+        return False
 
 
 def _iter_materials(mesh):
@@ -379,6 +516,14 @@ def on_tick(dt: float) -> None:
                     log(f"  save_directory({game_folder}) warning: {e}")
                 unreal.EditorAssetLibrary.save_loaded_asset(character)
 
+                # Reference screenshot — TODO: integrate after the
+                # standalone take_reference.ps1 prototype proves out the
+                # tick-deferred-quit pattern (HighResShot fires async
+                # and UE must render at least one frame for the file
+                # to land). For now, stage 00 does NOT take a reference;
+                # operator runs `tools/take_reference.ps1 -Char <id>`
+                # separately to capture it.
+
                 write_status("EXPORTING", produced=new_assets)
                 exported = _export_fbx_and_textures(new_assets, STATE["output_dir"])
                 log(f"export complete; {len(exported['meshes'])} fbx + "
@@ -450,6 +595,12 @@ def main() -> int:
     STATE["output_dir"] = args.output_dir
     STATE["output_name"] = args.name or args.asset.rsplit("/", 1)[-1].split(".")[0]
     STATE["pipeline"] = args.pipeline
+    # Workspace path is the pipeline root (e.g. .../5.7/native-glb).
+    # Set by the launcher via env var so the reference screenshot
+    # function can write to characters/<char>/source/. UE's -ExecCmds
+    # parser splits on whitespace, so paths-with-spaces don't survive
+    # as positional args — env var is the clean path.
+    STATE["workspace"] = os.environ.get("MH_PIPELINE_WORKSPACE")
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     write_status("STARTING")

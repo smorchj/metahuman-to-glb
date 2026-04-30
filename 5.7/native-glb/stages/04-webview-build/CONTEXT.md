@@ -5,6 +5,18 @@ builds a static site under `docs/` (GitHub Pages' default publish root)
 that renders each character in a browser using Google's `<model-viewer>`
 web component.
 
+## Scope (hard rule)
+
+You run this stage's launcher and verify its outputs. Nothing else.
+
+Do **not** modify pipeline code: `stages/*/tools/*.py`, `tools/*.ps1`,
+`_config/`, `RUN.md`, `CLAUDE.md`. If a script throws or produces wrong
+output, surface the actual error to the operator. Silently working
+around it (try/except around imports, skipping failed assets, lowering
+thresholds) turns a fixable bug into an invisible regression. Do not
+touch other stages' contracts, code, or manifest blocks, or other
+characters' artifacts.
+
 ## Inputs
 
 | Source | File / Location | Section | Why |
@@ -127,6 +139,40 @@ this stage will remove it from the gallery on the next rebuild
 - **No animations**: GLBs from stage 03 ship in rest pose. If/when stage 02
   bakes animation, `<model-viewer>` will pick them up via the `animation-name`
   attribute — no stage 04 change needed.
+
+## Resolved issues (testing record)
+
+- **Grey hair/beard color (2026-04-30)**: `base_color` values in
+  `mh_materials.json` are sRGB (Blender color-picker space), but
+  `THREE.Color.setRGB()` stores linear internally. Without conversion,
+  sRGB 0.095 was treated as linear 0.095, displaying as ~34% grey
+  instead of the correct near-black. Fix: append `.convertSRGBToLinear()`
+  to every `setRGB(base_color)` call in `viewer.js`. Applies to hair,
+  eyelashes, eye occlusion, and sclera colors. Caught on character
+  "bruce" where the mutton chops beard rendered medium grey instead of
+  dark brown.
+
+- **Asymmetric facial hair / cards clipping into face (2026-04-30)**:
+  Hair card meshes from UE sit flush against the face surface. After
+  FBX→GLB export, some cards on one side end up slightly behind the
+  face mesh (up to 0.014 units). This makes one side of the
+  mustache/beard appear thinner because embedded cards are hidden by
+  the opaque face. Caught on "bruce" (horseshoe mustache, 42% of
+  left-side cards behind face vs 30% on right).
+  **Viewer-side mitigation** (polygon offset only): `polygonOffset`
+  with `factor=-4, units=-16` in `templates/viewer.js` biases hair
+  fragments toward the camera in the depth buffer. Does not move
+  geometry. The earlier vertex shader push (`objectNormal * 0.002`)
+  was removed because it displaced all hair card verts (including
+  eyebrows) outward by 2 mm, causing visible hovering.
+  **Upstream fix** (2026-04-30): `_fix_hair_face_clearance()` in
+  `stages/02-blender-assemble/tools/import_glb.py`. Uses
+  `mathutils.bvhtree.BVHTree` to raycast each hair card vertex against
+  the face surface. Any vertex closer than 0.5 mm (or behind the
+  surface) is pushed outward along the face normal to 0.5 mm clearance.
+  Runs after material wiring, before saving the blend. This is the
+  proper geometry-level fix; the viewer-side shader hack remains as a
+  fallback for edge cases the BVH pass doesn't fully resolve.
 
 ## Failure modes (known)
 

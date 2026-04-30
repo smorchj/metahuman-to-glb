@@ -4,6 +4,18 @@ Turn an unrigged `MetaHumanCharacter` asset into an in-engine, saved
 SkeletalMesh + texture tree under `/Game/<Name>/` so stage 01 can
 FBX-export it.
 
+## Scope (hard rule)
+
+You run this stage's launcher and verify its outputs. Nothing else.
+
+Do **not** modify pipeline code: `stages/*/tools/*.py`, `tools/*.ps1`,
+`_config/`, `RUN.md`, `CLAUDE.md`. If a script throws or produces wrong
+output, surface the actual error to the operator. Silently working
+around it (try/except around imports, skipping failed assets, lowering
+thresholds) turns a fixable bug into an invisible regression. Do not
+touch other stages' contracts, code, or manifest blocks, or other
+characters' artifacts.
+
 ## Precondition
 
 - UE 5.6 project with the `MetaHumanCharacter` plugin enabled (e.g.
@@ -15,7 +27,13 @@ FBX-export it.
 
 ## Process
 
-The launcher runs `tools/build_metahuman.py` inside the editor's
+**Before launching UE**, the launcher extracts the Content Browser
+thumbnail embedded in the MetaHumanCharacter `.uasset` file and saves
+it to `characters/<id>/source/thumbnail.jpg`. This is a fast standalone
+Python step (no editor needed). The thumbnail lets the operator verify
+the correct character before committing to the expensive build cycle.
+
+The launcher then runs `tools/build_metahuman.py` inside the editor's
 Python environment. The script:
 
 1. `try_add_object_to_edit(character)`
@@ -33,6 +51,15 @@ Python environment. The script:
    + DCC; Optimized landed in 5.7).
 6. Save `/Game/<Name>/` so the resulting SkeletalMesh assets persist
    on disk for stage 01.
+7. Reference screenshot: spawn the assembled face / body / outfits /
+   groom-card actors in the editor world, point the perspective
+   viewport at the head, fire `HighResShot 1024x1024`, and copy the
+   resulting PNG to `characters/<id>/source/reference.png`. This is
+   UE's own render of the character — downstream stages compare their
+   output against it to catch material / shader regressions (flat-gray
+   hair, wrong beard saturation, missing scalp shadow, etc.). The
+   screenshot is best-effort: failures log a warning but do not fail
+   the stage.
 
 All state transitions are written to the `--status` JSON file so an
 external poller / orchestrator can observe progress without reading
@@ -49,10 +76,16 @@ the UE log.
 
 | Artifact | Location | Notes |
 |---|---|---|
-| SkeletalMesh assets | `<UE project>/Content/<Name>/Body|Face|Clothing|Grooms/` | Saved in-engine |
+| SkeletalMesh assets | `<UE project>/Content/<Name>/Body\|Face\|Clothing\|Grooms/` | Saved in-engine |
+| Thumbnail (pre-build) | `characters/<id>/source/thumbnail.jpg` | JPEG extracted from the .uasset Content Browser thumbnail. Operator review gate before the build. |
+| Reference screenshot | `characters/<id>/source/reference.png` | 1024x1024 UE-rendered headshot of the assembled MH. Ground truth for downstream visual diffing. |
 | Status JSON | (transient) | `C:/tmp/mh/status.json` |
 
-Stage 01 picks up from the saved `/Game/<Name>/` content.
+Stage 01 picks up from the saved `/Game/<Name>/` content. Stage 04's
+preview should visually match `source/reference.png` modulo the slight
+PBR differences between UE's MH shader and three.js's procedural hair
+shader injection — significant divergence (flat hair, missing scalp
+shadow, wrong beard saturation) signals a regression in stages 02-04.
 
 ## Launcher
 

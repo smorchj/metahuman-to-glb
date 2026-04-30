@@ -1,0 +1,61 @@
+{
+  "character": "ada",
+  "saved_at": "2026-04-29T17:44:49Z",
+  "materials": [
+    {
+      "material_name": "Eyebrows_M_SlightArch_CardsMesh_Group0_LOD0_CardMat",
+      "kind": "hair",
+      "params": {
+        "base_color": [
+          0.03539253287414171,
+          0.021649114925929688,
+          0.012405696858508376,
+          1.0
+        ],
+        "alpha_clip": true,
+        "alpha_channel": "r",
+        "alpha_stem": "Eyebrows_M_SlightArch_CardsAtlas_Attribute",
+        "roughness": 0.55,
+        "ignore_gltf_map": true
+      },
+      "textures": {}
+    },
+    {
+      "material_name": "Hair_S_Coil_CardsMesh_Group0_LOD0_CardMat",
+      "kind": "hair",
+      "params": {
+        "base_color": [
+          0.03539253287414171,
+          0.021649114925929688,
+          0.012405696858508376,
+          1.0
+        ],
+        "alpha_clip": true,
+        "alpha_channel": "r",
+        "alpha_stem": "Hair_S_Coil_CardsAtlas_Attribute",
+        "roughness": 0.55,
+        "ignore_gltf_map": true
+      },
+      "textures": {}
+    },
+    {
+      "material_name": "SKM_Ada_FaceMesh.001_LashMat",
+      "kind": "face_accessory",
+      "face_slot": "eyelashes",
+      "params": {
+        "base_color": [
+          0.03539253287414171,
+          0.021649114925929688,
+          0.012405696858508376,
+          1.0
+        ],
+        "alpha_clip": true,
+        "roughness": 0.55,
+        "ignore_gltf_map": true
+      },
+      "textures": {
+        "alpha": "textures/T_Eyelashes_L_SlightCurl_Coverage.png"
+      }
+    }
+  ]
+}
