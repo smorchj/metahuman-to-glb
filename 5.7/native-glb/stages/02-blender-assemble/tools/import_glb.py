@@ -1586,6 +1586,155 @@ def _fix_hair_face_clearance():
     return total_fixed
 
 
+_SCALP_DARK_PREFIXES = (
+    "Hair_", "Mustache_", "Moustache_", "Beard_",
+    "Goatee_", "Stubble_", "Sideburns_", "Fuzz_",
+)
+_SCALP_DARK_RADIUS = 0.030   # 30 mm — verts within this distance get darkened
+_SCALP_DARK_MIN    = 0.12    # darkest multiplier (0 = black, 1 = no change)
+
+
+def _bake_scalp_darkening():
+    """Bake proximity-based darkening onto the face mesh vertex colors.
+
+    For each face mesh vertex, find the nearest hair card vertex. If it's
+    within _SCALP_DARK_RADIUS, darken the vertex color proportionally.
+    This makes scalp skin visible through gaps between hair cards appear
+    shadowed instead of bright, selling the illusion of dense hair.
+
+    The vertex colors are exported as COLOR_0 in the GLB. The viewer's
+    skin shader multiplies diffuseColor by vertexColor, so white (1,1,1)
+    = no change, dark = darkened scalp.
+
+    Must run AFTER hair card clearance fix (geometry is final) and
+    BEFORE saving the .blend.
+    """
+    from mathutils.kdtree import KDTree
+    from mathutils import Color
+
+    # Find the main face mesh
+    face_obj = None
+    for o in bpy.data.objects:
+        if o.type != "MESH":
+            continue
+        if "facemesh" in o.name.lower() and "cardsmesh" not in o.name.lower():
+            if face_obj is None or len(o.data.vertices) > len(face_obj.data.vertices):
+                face_obj = o
+    if face_obj is None:
+        _log("  scalp-dark: no face mesh found, skipping")
+        return 0
+
+    # Collect all hair card verts in world space
+    cards = [o for o in bpy.data.objects
+             if o.type == "MESH"
+             and any(o.name.startswith(p) for p in _SCALP_DARK_PREFIXES)]
+    if not cards:
+        _log("  scalp-dark: no hair card meshes found")
+        return 0
+
+    # Build KD-tree from all hair card vertices (world space)
+    total_card_verts = sum(len(o.data.vertices) for o in cards)
+    tree = KDTree(total_card_verts)
+    idx = 0
+    for card_obj in cards:
+        cw = card_obj.matrix_world
+        for v in card_obj.data.vertices:
+            wp = cw @ v.co
+            tree.insert(wp, idx)
+            idx += 1
+    tree.balance()
+
+    # Ensure face mesh has a vertex color layer
+    mesh = face_obj.data
+    if not mesh.vertex_colors:
+        mesh.vertex_colors.new(name="Col")
+    color_layer = mesh.vertex_colors.active
+
+    # Initialize all vertex colors to white (no darkening)
+    for loop_color in color_layer.data:
+        loop_color.color = (1.0, 1.0, 1.0, 1.0)
+
+    # Compute per-vertex darkening factor based on nearest hair card
+    fw = face_obj.matrix_world
+    darkened = 0
+    vert_factors = {}
+    for v in mesh.vertices:
+        wp = fw @ v.co
+        _co, _idx, dist = tree.find(wp)
+        if dist < _SCALP_DARK_RADIUS:
+            # Smooth falloff: closer = darker
+            t = dist / _SCALP_DARK_RADIUS
+            factor = _SCALP_DARK_MIN + (1.0 - _SCALP_DARK_MIN) * t
+            vert_factors[v.index] = factor
+            darkened += 1
+
+    # Write per-loop vertex colors (each polygon corner references a vert)
+    for poly in mesh.polygons:
+        for li in range(poly.loop_start, poly.loop_start + poly.loop_total):
+            vi = mesh.loops[li].vertex_index
+            if vi in vert_factors:
+                f = vert_factors[vi]
+                color_layer.data[li].color = (f, f, f, 1.0)
+
+    # Wire vertex colors into skin materials so the glTF exporter
+    # includes COLOR_0 in the GLB. Without this, exporter silently
+    # drops vertex colors ("not used in the node tree").
+    _SKIP_SLOTS = ("lash", "eye", "teeth", "saliva", "hide",
+                   "occlusion", "cartilage", "lacrimal")
+    wired = 0
+    for slot in face_obj.material_slots:
+        mat = slot.material
+        if not mat or not mat.node_tree:
+            continue
+        ml = mat.name.lower()
+        if any(k in ml for k in _SKIP_SLOTS):
+            continue
+        nt = mat.node_tree
+        bsdf = next((n for n in nt.nodes
+                      if n.type == "BSDF_PRINCIPLED"), None)
+        if not bsdf:
+            continue
+        bc_in = bsdf.inputs.get("Base Color")
+        if not bc_in:
+            continue
+        # Add vertex color node
+        try:
+            vc = nt.nodes.new("ShaderNodeVertexColor")
+            vc.layer_name = "Col"
+        except Exception:
+            vc = nt.nodes.new("ShaderNodeAttribute")
+            vc.attribute_name = "Col"
+        vc.location = (-500, -300)
+        # Multiply into Base Color via MixRGB
+        try:
+            mix = nt.nodes.new("ShaderNodeMixRGB")
+            mix.blend_type = "MULTIPLY"
+            mix.inputs["Fac"].default_value = 1.0
+            c1, c2 = mix.inputs["Color1"], mix.inputs["Color2"]
+        except Exception:
+            mix = nt.nodes.new("ShaderNodeMix")
+            mix.data_type = "RGBA"
+            mix.blend_type = "MULTIPLY"
+            mix.inputs[0].default_value = 1.0
+            c1, c2 = mix.inputs[6], mix.inputs[7]
+        mix.location = (-250, 0)
+        if bc_in.is_linked:
+            src = bc_in.links[0].from_socket
+            nt.links.remove(bc_in.links[0])
+            nt.links.new(src, c1)
+        else:
+            c1.default_value = bc_in.default_value
+        nt.links.new(vc.outputs["Color"], c2)
+        nt.links.new(mix.outputs[0], bc_in)
+        wired += 1
+    if wired:
+        _log(f"  scalp-dark: wired vertex colors into {wired} skin material(s)")
+
+    _log(f"  scalp-dark: darkened {darkened}/{len(mesh.vertices)} face verts "
+         f"(radius={_SCALP_DARK_RADIUS*1000:.0f}mm, min={_SCALP_DARK_MIN})")
+    return darkened
+
+
 def _remove_gltf_placeholder_empties():
     """Blender's glTF importer spawns `Icosphere` meshes for glTF nodes
     that have no geometry/light/camera (bone sockets, empty transforms).
@@ -1725,6 +1874,10 @@ def main():
     clearance_fixed = _fix_hair_face_clearance()
     if clearance_fixed:
         _log(f"pushed {clearance_fixed} hair card vert(s) to clear face clipping")
+
+    scalp_darkened = _bake_scalp_darkening()
+    if scalp_darkened:
+        _log(f"baked scalp darkening onto {scalp_darkened} face vert(s)")
 
     # Save blend
     blend_path = os.path.join(out_root, f"{args.char}.blend")

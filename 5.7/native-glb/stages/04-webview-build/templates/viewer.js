@@ -23,21 +23,56 @@ const DRACO_DECODER = 'https://www.gstatic.com/draco/versioned/decoders/1.5.7/';
 // defaults in applyHair / addHairInnerPass. Values dialled in via ?tune=1
 // and pasted here. Add a character whenever its live-tuned sweet spot
 // diverges noticeably from the shared defaults.
+// Per-character hair settings.  Two formats supported:
+//   Legacy flat: { hair_roughness_floor: 0.63, ... }  (merged into all hair params)
+//   Full:        { global: { ... }, materials: { hair: { mode, color, ... }, ... } }
 const HAIR_OVERRIDES = {
   taro: {
-    hair_roughness_floor:    0.63,
-    root_darkening:          0.00,
-    seed_variation:          0.25,
-    hair_roughness_seed_amp: 0.08,
-    anisotropy:              0.63,
-    anisotropy_rotation:    -1.52,
+    global: {
+      hair_roughness_floor:    0.63,
+      root_darkening:          0.00,
+      seed_variation:          0.25,
+      hair_roughness_seed_amp: 0.08,
+      anisotropy:              0.63,
+      anisotropy_rotation:    -1.52,
+    },
+  },
+  bo: {
+    global: {
+      hair_roughness_floor:    0.56,
+      root_darkening:          0.00,
+      seed_variation:          0.36,
+      hair_roughness_seed_amp: 0.08,
+      anisotropy:              0.09,
+      anisotropy_rotation:     0.798,
+    },
+    materials: {
+      brows: { mode: 'blend', color: '#090603', hair_density: 4.0 },
+      hair:  { mode: 'both',  color: '#090603', hair_density: 4.0, blend_opacity: 0.1 },
+    },
+  },
+  bruce: {
+    global: {
+      hair_roughness_floor:    0.55,
+      root_darkening:          0.00,
+      seed_variation:          0.36,
+      hair_roughness_seed_amp: 0.08,
+      anisotropy:              0.09,
+      anisotropy_rotation:    -0.662,
+    },
+    materials: {
+      beard:    { mode: 'blend', color: '#1f1914', hair_density: 1.7 },
+      brows:    { mode: 'blend', color: '#0c0805', hair_density: 1.0 },
+      hair:     { mode: 'both',  color: '#1c1007', hair_density: 5.0, blend_opacity: 0.1 },
+      mustache: { mode: 'blend', color: '#473c33', hair_density: 1.3 },
+    },
   },
 };
 
-// Module-level holder for the active character's overrides. Set at mount()
-// time from opts.characterId (preferred) or parsed from the URL path, then
-// read by applyHair / addHairInnerPass.
-let _activeHairOverrides = null;
+// Module-level holders set at mount() time.
+let _activeHairOverrides = null;   // global params merged into all hair specs
+let _activeHairMaterials = null;   // per-material overrides keyed by label
+let _useAlphaToCoverage = false;
 
 function _resolveCharacterId(opts) {
   if (opts && opts.characterId) return String(opts.characterId).toLowerCase();
@@ -108,11 +143,28 @@ export async function mount(container, opts) {
   // needing to re-bake the GLB.
   applyBoneFixups(gltf.scene);
 
+  // Detect MSAA for alpha-to-coverage hair rendering.
+  const gl = renderer.getContext();
+  const msaaSamples = gl.getParameter(gl.SAMPLES);
+  _useAlphaToCoverage = msaaSamples > 0;
+  console.log('[viewer] MSAA samples:', msaaSamples,
+              _useAlphaToCoverage ? '→ alpha-to-coverage' : '→ two-pass fallback');
+
   // Resolve per-character hair overrides before patching materials.
   const charId = _resolveCharacterId(opts);
-  _activeHairOverrides = charId ? (HAIR_OVERRIDES[charId] || null) : null;
+  const rawOverride = charId ? (HAIR_OVERRIDES[charId] || null) : null;
+  if (rawOverride && rawOverride.global) {
+    // Full format: { global: {...}, materials: {...} }
+    _activeHairOverrides = rawOverride.global;
+    _activeHairMaterials = rawOverride.materials || null;
+  } else {
+    // Legacy flat format or null
+    _activeHairOverrides = rawOverride;
+    _activeHairMaterials = null;
+  }
   if (_activeHairOverrides) {
-    console.log('[viewer] hair overrides for', charId, _activeHairOverrides);
+    console.log('[viewer] hair overrides for', charId, _activeHairOverrides,
+                _activeHairMaterials ? 'per-mat:' : '', _activeHairMaterials || '');
   }
 
   let hairMats = [];
@@ -327,11 +379,67 @@ function patchMaterials(root, mapping, baseUrl) {
     });
   });
   const hairMats = [];
-  for (const { outerMat } of hairTwoPass) hairMats.push(outerMat);
-  for (const { mesh, outerMat, spec } of hairTwoPass) {
-    const innerMat = addHairInnerPass(mesh, outerMat, spec);
-    if (innerMat) hairMats.push(innerMat);
+  for (const { outerMat } of hairTwoPass) {
+    outerMat.userData.hairPass = outerMat.alphaToCoverage ? 'a2c' : 'outer';
+    hairMats.push(outerMat);
   }
+  // For A2C hair: create a hidden blend-pass clone (same mesh, transparent
+  // material) so the tuning panel can enable "both" mode (A2C base + blend
+  // fringe on top). Clone shares BufferGeometry = zero extra VRAM.
+  for (const { mesh, outerMat } of hairTwoPass) {
+    if (outerMat.alphaToCoverage) {
+      const blendMat = outerMat.clone();
+      blendMat.name = (outerMat.name || 'hair') + '__blend';
+      blendMat.alphaToCoverage = false;
+      blendMat.transparent = true;
+      blendMat.depthWrite = false;
+      blendMat.alphaTest = 0.0;
+      // Per-material blend_opacity from saved settings, or low default.
+      const _blendLabel = ((outerMat.name || '').split('_')[0].toLowerCase());
+      const _blLabel = _blendLabel === 'eyebrows' ? 'brows' : (_blendLabel || 'hair');
+      const _blendPerMat = _activeHairMaterials?.[_blLabel] || null;
+      blendMat.opacity = _blendPerMat?.blend_opacity ?? 0.4;
+      uniqueCacheKey(blendMat);
+      blendMat.userData = { ...blendMat.userData, hairPass: 'blend' };
+      // The cloned onBeforeCompile closure captures the original mat variable,
+      // so it would overwrite the A2C material's hairUniforms when compiled.
+      // Wrap it to redirect the write to this clone instead.
+      const _origCompile = blendMat.onBeforeCompile;
+      if (_origCompile) {
+        blendMat.onBeforeCompile = (shader) => {
+          const saved = outerMat.userData.hairUniforms;
+          _origCompile(shader);
+          outerMat.userData.hairUniforms = saved;
+          blendMat.userData.hairUniforms = shader.uniforms;
+        };
+      }
+      const blendMesh = mesh.clone();
+      blendMesh.material = blendMat;
+      blendMesh.name = mesh.name + '__blend';
+      blendMesh.visible = outerMat.userData._savedHairMode === 'both';
+      mesh.parent?.add(blendMesh);
+      outerMat.userData.blendClone = { mesh: blendMesh, mat: blendMat };
+      hairMats.push(blendMat);
+    }
+  }
+  if (!_useAlphaToCoverage) {
+    // Fallback: add inner opaque-clip pass for each hair mesh.
+    for (const { mesh, outerMat, spec } of hairTwoPass) {
+      const innerMat = addHairInnerPass(mesh, outerMat, spec);
+      if (innerMat) {
+        innerMat.userData.hairPass = 'inner';
+        hairMats.push(innerMat);
+      }
+    }
+  }
+  // Force DoubleSide on every mesh material. GLBs exported from Blender default
+  // to backface-culling-on; hair cards, eyelashes, and face accessories all need
+  // both faces visible.
+  root.traverse((obj) => {
+    if (!obj.isMesh) return;
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    for (const m of mats) { if (m) m.side = THREE.DoubleSide; }
+  });
   console.log('[viewer] patched', counts.matched, 'matched /', counts.skipped,
               'skipped', counts.byKind, '/ hair two-pass:', hairTwoPass.length);
   return { hairMats };
@@ -474,10 +582,27 @@ function applyHair(mat, p, t, loadTex) {
   // over spec (stage 02 doesn't emit these tuning scalars, but if it ever
   // does, the hand-dialled per-char value should take precedence).
   if (_activeHairOverrides) p = { ...p, ..._activeHairOverrides };
+
+  // Per-material overrides from saved settings (mode, color, density).
+  const _matLabel = (name) => {
+    const w = (name || '').split('_')[0].toLowerCase();
+    return w === 'eyebrows' ? 'brows' : (w || 'hair');
+  };
+  const matPerOverride = _activeHairMaterials?.[_matLabel(mat.name)] || null;
+  if (matPerOverride) {
+    // Merge per-material scalar params into p so density etc. are picked up.
+    if (typeof matPerOverride.hair_density === 'number') p = { ...p, hair_density: matPerOverride.hair_density };
+  }
+
   // The glTF-carried map is the data-packed hair card atlas (R=strand mask on
   // compact atlases, A=legacy) — NOT albedo. Drop it; color comes from params.
   if (p.ignore_gltf_map) mat.map = null;
-  if (p.base_color) mat.color.setRGB(p.base_color[0], p.base_color[1], p.base_color[2]).convertSRGBToLinear();
+  // Per-material color override wins over spec base_color.
+  if (matPerOverride?.color) {
+    mat.color.set(matPerOverride.color);
+  } else if (p.base_color) {
+    mat.color.setRGB(p.base_color[0], p.base_color[1], p.base_color[2]).convertSRGBToLinear();
+  }
   if (typeof p.roughness === 'number') mat.roughness = p.roughness;
 
   // Try sidecar atlas first (via stem in params), then fall back to whatever
@@ -491,16 +616,29 @@ function applyHair(mat, p, t, loadTex) {
     return;
   }
 
-  // Two-pass hair: this material is the OUTER pass — translucent alpha-blend
-  // over the alphaMap channel, depth-write disabled. An inner opaque alpha-
-  // clip sibling is added by patchMaterials (addHairInnerPass) so the core
-  // silhouette writes depth reliably and the outer fringe blends on top.
+  // Determine rendering mode. Per-material saved mode wins, then auto-detect:
+  // facial hair defaults to blend, head hair defaults to A2C.
+  const isFacialHair = /brow|beard|mustache/i.test(mat.name);
+  const savedMode = matPerOverride?.mode;  // 'a2c' | 'blend' | 'both' | undefined
+  const useA2C = savedMode
+    ? (savedMode === 'a2c' || savedMode === 'both')
+    : (_useAlphaToCoverage && !isFacialHair);
+
   mat.alphaMap = atlas;
   mat.alphaHash = false;
-  mat.transparent = true;
-  mat.alphaTest = 0.0;
-  mat.depthWrite = false;
   mat.side = THREE.DoubleSide;
+  if (useA2C) {
+    mat.alphaToCoverage = true;
+    mat.transparent = false;
+    mat.depthWrite = true;
+    mat.alphaTest = 0.0;
+  } else {
+    mat.transparent = true;
+    mat.alphaTest = 0.0;
+    mat.depthWrite = false;
+  }
+  // Tag the saved mode so patchMaterials can set "both" clone visibility.
+  mat.userData._savedHairMode = savedMode || null;
   // Hair cards sit flush against the face mesh; export-time depth
   // clearance is sometimes <1 mm, causing cards to clip behind the face
   // on one side. Polygon offset biases hair toward the camera so
@@ -555,6 +693,9 @@ function applyHair(mat, p, t, loadTex) {
     shader.uniforms.uHairSeedAmp   = { value: seedAmp  };
     shader.uniforms.uHairRoughFlr  = { value: roughFloor };
     shader.uniforms.uHairRoughSeed = { value: roughSeedAmp };
+    const densityDefault = typeof p.hair_density === 'number' ? p.hair_density
+                         : (_useAlphaToCoverage && !isFacialHair ? 2.5 : 1.0);
+    shader.uniforms.uHairDensity   = { value: densityDefault };
     mat.userData.hairUniforms = shader.uniforms;
 
     // Sample the atlas once at the top of the fragment main and derive the
@@ -564,6 +705,7 @@ function applyHair(mat, p, t, loadTex) {
       uniform float uHairSeedAmp;
       uniform float uHairRoughFlr;
       uniform float uHairRoughSeed;
+      uniform float uHairDensity;
     ` + shader.fragmentShader;
 
     // Modulate diffuseColor with root→tip darkening + per-strand tint
@@ -579,7 +721,11 @@ function applyHair(mat, p, t, loadTex) {
         float seed  = hairAtlas.${seedChan};        // per-strand random
         float toneMul   = mix( uHairRootDark, 1.0, rootT );
         float strandMul = 1.0 + (seed - 0.5) * 2.0 * uHairSeedAmp;
-        diffuseColor.rgb *= toneMul * strandMul;
+        // Normal-based self-AO: cards edge-on or facing away from camera
+        // are deeper in the hair volume and should appear darker.
+        float ndv = abs( dot( normalize(vNormal), normalize(vViewPosition) ) );
+        float hairAO = mix( 0.3, 1.0, smoothstep( 0.05, 0.55, ndv ) );
+        diffuseColor.rgb *= toneMul * strandMul * hairAO;
       #endif
       `
     );
@@ -608,11 +754,14 @@ function applyHair(mat, p, t, loadTex) {
 
     // Replace the default alphaMap sampler (which uses .g) with the declared
     // channel so MH compact-atlas R gets picked up, not the dense G gradient.
+    // Apply density gain so low atlas alpha values (designed for alpha-blend)
+    // map to enough MSAA coverage in alpha-to-coverage mode.
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <alphamap_fragment>',
       `
       #ifdef USE_ALPHAMAP
-        diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).${alphaSwz};
+        float hairAlpha = texture2D( alphaMap, vAlphaMapUv ).${alphaSwz};
+        diffuseColor.a *= clamp(hairAlpha * uHairDensity, 0.0, 1.0);
       #endif
       `
     );
@@ -675,7 +824,11 @@ function addHairInnerPass(mesh, outerMat, spec) {
         float seed  = hairAtlas.${seedChan};
         float toneMul   = mix( uHairRootDark, 1.0, rootT );
         float strandMul = 1.0 + (seed - 0.5) * 2.0 * uHairSeedAmp;
-        diffuseColor.rgb *= toneMul * strandMul;
+        // Normal-based self-AO: cards edge-on or facing away from camera
+        // are deeper in the hair volume and should appear darker.
+        float ndv = abs( dot( normalize(vNormal), normalize(vViewPosition) ) );
+        float hairAO = mix( 0.3, 1.0, smoothstep( 0.05, 0.55, ndv ) );
+        diffuseColor.rgb *= toneMul * strandMul * hairAO;
       #endif
       `
     );
@@ -721,9 +874,6 @@ function addHairInnerPass(mesh, outerMat, spec) {
 // ---------------- hair tuning panel
 
 function buildHairTunePanel(container, hairMats) {
-  // Floating control panel for live tweaking. Position on top-right of the
-  // viewer container; collapsed by default behind a small toggle so it doesn't
-  // cover the model.
   container.style.position = container.style.position || 'relative';
 
   const root = document.createElement('div');
@@ -732,6 +882,7 @@ function buildHairTunePanel(container, hairMats) {
     'font:12px/1.3 system-ui,-apple-system,sans-serif', 'color:#e8e8e8',
     'background:rgba(18,20,26,0.88)', 'border:1px solid #2a2f3a',
     'border-radius:6px', 'user-select:none', 'backdrop-filter:blur(6px)',
+    'max-height:90vh', 'overflow-y:auto',
   ].join(';');
 
   const header = document.createElement('div');
@@ -740,7 +891,7 @@ function buildHairTunePanel(container, hairMats) {
   root.appendChild(header);
 
   const body = document.createElement('div');
-  body.style.cssText = 'padding:4px 10px 10px;display:none;min-width:220px';
+  body.style.cssText = 'padding:4px 10px 10px;display:none;min-width:240px';
   root.appendChild(body);
 
   header.addEventListener('click', () => {
@@ -749,20 +900,9 @@ function buildHairTunePanel(container, hairMats) {
     header.textContent = open ? 'hair ▴' : 'hair ▾';
   });
 
-  // Seed values from whatever the first hair material currently has, so the
-  // slider positions match the starting look.
-  const first = hairMats[0];
-  const u0 = first?.userData?.hairUniforms || {};
-  const seeds = {
-    roughFloor:  u0.uHairRoughFlr?.value  ?? 0.3,
-    rootDark:    u0.uHairRootDark?.value  ?? 0.35,
-    seedAmp:     u0.uHairSeedAmp?.value   ?? 0.25,
-    roughSeed:   u0.uHairRoughSeed?.value ?? 0.08,
-    anisotropy:  first?.anisotropy ?? 0.8,
-    anisoRot:    first?.anisotropyRotation ?? 0.0,
-  };
+  // --- helpers ---
 
-  const addSlider = (label, min, max, step, initial, onChange) => {
+  const addSlider = (parent, label, min, max, step, initial, onChange) => {
     const row = document.createElement('div');
     row.style.cssText = 'display:grid;grid-template-columns:90px 1fr 44px;gap:6px;align-items:center;margin:4px 0';
     const l = document.createElement('span'); l.textContent = label;
@@ -781,35 +921,217 @@ function buildHairTunePanel(container, hairMats) {
       onChange(v);
     });
     row.appendChild(l); row.appendChild(input); row.appendChild(val);
-    body.appendChild(row);
+    parent.appendChild(row);
   };
 
-  // Uniform-driven (shader) controls
-  const setUniform = (name, v) => {
+  const addSectionHeader = (parent, text) => {
+    const h = document.createElement('div');
+    h.textContent = text;
+    h.style.cssText = 'margin:8px 0 2px;padding:2px 0;border-top:1px solid #333;color:#8af;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.06em';
+    parent.appendChild(h);
+  };
+
+  // --- global section: uniforms that affect all hair materials ---
+
+  addSectionHeader(body, 'global');
+
+  const first = hairMats[0];
+  const u0 = first?.userData?.hairUniforms || {};
+
+  const setUniformAll = (name, v) => {
     for (const m of hairMats) {
       const u = m.userData?.hairUniforms?.[name];
       if (u) u.value = v;
     }
   };
-  addSlider('rough floor', 0.0, 1.0, 0.01, seeds.roughFloor,
-            (v) => setUniform('uHairRoughFlr', v));
-  addSlider('root dark',   0.0, 1.0, 0.01, seeds.rootDark,
-            (v) => setUniform('uHairRootDark', v));
-  addSlider('seed tint',   0.0, 0.6, 0.01, seeds.seedAmp,
-            (v) => setUniform('uHairSeedAmp', v));
-  addSlider('seed rough',  0.0, 0.3, 0.01, seeds.roughSeed,
-            (v) => setUniform('uHairRoughSeed', v));
+  addSlider(body, 'rough floor', 0.0, 1.0, 0.01, u0.uHairRoughFlr?.value ?? 0.3,
+            (v) => setUniformAll('uHairRoughFlr', v));
+  addSlider(body, 'root dark',   0.0, 1.0, 0.01, u0.uHairRootDark?.value ?? 0.35,
+            (v) => setUniformAll('uHairRootDark', v));
+  addSlider(body, 'seed tint',   0.0, 0.6, 0.01, u0.uHairSeedAmp?.value ?? 0.25,
+            (v) => setUniformAll('uHairSeedAmp', v));
+  addSlider(body, 'seed rough',  0.0, 0.3, 0.01, u0.uHairRoughSeed?.value ?? 0.08,
+            (v) => setUniformAll('uHairRoughSeed', v));
 
-  // Material-property controls (anisotropy lives on MeshPhysicalMaterial)
-  const setMatProp = (key, v) => {
-    for (const m of hairMats) {
-      if (key in m) m[key] = v;
-    }
+  const setMatPropAll = (key, v) => {
+    for (const m of hairMats) { if (key in m) m[key] = v; }
   };
-  addSlider('anisotropy',  0.0, 1.0, 0.01, seeds.anisotropy,
-            (v) => setMatProp('anisotropy', v));
-  addSlider('aniso rot',   -3.1416, 3.1416, 0.01, seeds.anisoRot,
-            (v) => setMatProp('anisotropyRotation', v));
+  addSlider(body, 'anisotropy',  0.0, 1.0, 0.01, first?.anisotropy ?? 0.8,
+            (v) => setMatPropAll('anisotropy', v));
+  addSlider(body, 'aniso rot',   -3.1416, 3.1416, 0.01, first?.anisotropyRotation ?? 0.0,
+            (v) => setMatPropAll('anisotropyRotation', v));
+
+  // --- per-material sections ---
+
+  // Derive a short label from the material name.
+  const matLabel = (name) => {
+    const n = (name || '').replace(/__inner$/, '');
+    const w = n.split('_')[0].toLowerCase();
+    if (w === 'eyebrows') return 'brows';
+    return w || 'hair';
+  };
+
+  // Group materials by label. Inner-pass materials are grouped with their outer.
+  const groups = new Map();
+  for (const m of hairMats) {
+    const label = matLabel(m.name);
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(m);
+  }
+
+  for (const [label, mats] of groups) {
+    addSectionHeader(body, label);
+
+    // Mode toggle: A2C / blend / both
+    const modeRow = document.createElement('div');
+    modeRow.style.cssText = 'display:flex;gap:4px;margin:4px 0';
+    const mkBtn = (text, active) => {
+      const b = document.createElement('button');
+      b.textContent = text;
+      b.style.cssText = 'flex:1;padding:3px 0;border:1px solid #444;border-radius:3px;cursor:pointer;font:11px system-ui;' +
+        (active ? 'background:#335;color:#8af;border-color:#8af' : 'background:#1a1c22;color:#777');
+      return b;
+    };
+    const setActive = (btn, on) => {
+      btn.style.background = on ? '#335' : '#1a1c22';
+      btn.style.color = on ? '#8af' : '#777';
+      btn.style.borderColor = on ? '#8af' : '#444';
+    };
+
+    // Find the primary (non-blend, non-inner) materials and any blend clones.
+    const primary = mats.filter(m => m.userData?.hairPass !== 'blend');
+    const blendClones = mats.filter(m => m.userData?.hairPass === 'blend');
+    const hasClones = blendClones.length > 0;
+    // Also collect clone meshes for visibility toggling.
+    const cloneMeshes = [];
+    for (const m of primary) {
+      if (m.userData?.blendClone?.mesh) cloneMeshes.push(m.userData.blendClone.mesh);
+    }
+
+    let curMode = primary[0]?.userData?._savedHairMode === 'both' ? 'both'
+                 : primary[0]?.alphaToCoverage ? 'a2c' : 'blend';
+    const a2cBtn   = mkBtn('A2C',   curMode === 'a2c');
+    const blendBtn = mkBtn('blend', curMode === 'blend');
+    const bothBtn  = mkBtn('both',  curMode === 'both');
+
+    const switchMode = (mode) => {
+      if (mode === curMode) return;
+      curMode = mode;
+      setActive(a2cBtn,   mode === 'a2c');
+      setActive(blendBtn, mode === 'blend');
+      setActive(bothBtn,  mode === 'both');
+      for (const m of primary) {
+        if (mode === 'blend') {
+          m.alphaToCoverage = false;
+          m.transparent = true;
+          m.depthWrite = false;
+        } else { // 'a2c' or 'both': primary uses A2C
+          m.alphaToCoverage = true;
+          m.transparent = false;
+          m.depthWrite = true;
+        }
+        m.needsUpdate = true;
+      }
+      // Show blend clone meshes only in "both" mode.
+      for (const cm of cloneMeshes) cm.visible = (mode === 'both');
+    };
+    a2cBtn.addEventListener('click',   () => switchMode('a2c'));
+    blendBtn.addEventListener('click', () => switchMode('blend'));
+    bothBtn.addEventListener('click',  () => switchMode('both'));
+    modeRow.appendChild(a2cBtn);
+    modeRow.appendChild(blendBtn);
+    if (hasClones) modeRow.appendChild(bothBtn);
+    body.appendChild(modeRow);
+
+    // Per-group color picker
+    const colorRow = document.createElement('div');
+    colorRow.style.cssText = 'display:grid;grid-template-columns:90px 1fr;gap:6px;align-items:center;margin:4px 0';
+    const colorLabel = document.createElement('span'); colorLabel.textContent = 'color';
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.value = '#' + (primary[0]?.color?.getHexString() || '000000');
+    colorInput.style.cssText = 'width:100%;height:24px;border:1px solid #444;border-radius:3px;background:none;cursor:pointer';
+    colorInput.addEventListener('input', () => {
+      for (const m of mats) m.color.set(colorInput.value);
+    });
+    colorRow.appendChild(colorLabel); colorRow.appendChild(colorInput);
+    body.appendChild(colorRow);
+
+    // Per-group density sliders.
+    const gu = primary[0]?.userData?.hairUniforms || {};
+    const setPrimaryUniform = (name, v) => {
+      for (const m of primary) {
+        const u = m.userData?.hairUniforms?.[name];
+        if (u) u.value = v;
+      }
+    };
+    addSlider(body, 'density', 0.5, 5.0, 0.1, gu.uHairDensity?.value ?? 2.5,
+              (v) => setPrimaryUniform('uHairDensity', v));
+    if (hasClones) {
+      // Blend pass opacity: controls how much the transparent fringe layer
+      // adds on top of the A2C base.  Uses material.opacity (works without
+      // shader compilation) instead of the uniform.
+      addSlider(body, 'blend opacity', 0.0, 1.0, 0.05, blendClones[0]?.opacity ?? 0.4,
+                (v) => { for (const m of blendClones) m.opacity = v; });
+    }
+  }
+
+  // --- save button ---
+
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'copy JSON';
+  saveBtn.style.cssText = 'width:100%;margin-top:10px;padding:5px;border:1px solid #444;border-radius:3px;background:#1a1c22;color:#8af;cursor:pointer;font:11px system-ui;letter-spacing:0.04em';
+  saveBtn.addEventListener('click', () => {
+    const out = { global: {}, materials: {} };
+
+    // Read global values from first material's uniforms.
+    const u = first?.userData?.hairUniforms || {};
+    out.global.hair_roughness_floor    = +(u.uHairRoughFlr?.value  ?? 0.3).toFixed(3);
+    out.global.root_darkening          = +(u.uHairRootDark?.value  ?? 0).toFixed(3);
+    out.global.seed_variation          = +(u.uHairSeedAmp?.value   ?? 0.25).toFixed(3);
+    out.global.hair_roughness_seed_amp = +(u.uHairRoughSeed?.value ?? 0.08).toFixed(3);
+    out.global.anisotropy              = +(first?.anisotropy ?? 0.8).toFixed(3);
+    out.global.anisotropy_rotation     = +(first?.anisotropyRotation ?? 0).toFixed(3);
+
+    // Read per-material values.
+    for (const [label, mats] of groups) {
+      const pri = mats.filter(m => m.userData?.hairPass !== 'blend');
+      const bld = mats.filter(m => m.userData?.hairPass === 'blend');
+      const p0 = pri[0];
+      const pu = p0?.userData?.hairUniforms || {};
+      const entry = {};
+
+      // Detect mode.
+      const hasBlendClone = bld.length > 0;
+      const cloneVisible = hasBlendClone && bld.some(m => {
+        for (const pm of pri) {
+          if (pm.userData?.blendClone?.mesh?.visible) return true;
+        }
+        return false;
+      });
+      if (p0?.alphaToCoverage && cloneVisible) entry.mode = 'both';
+      else if (p0?.alphaToCoverage) entry.mode = 'a2c';
+      else entry.mode = 'blend';
+
+      entry.color = '#' + (p0?.color?.getHexString() || '000000');
+      entry.hair_density = +(pu.uHairDensity?.value ?? 2.5).toFixed(2);
+      if (hasBlendClone) {
+        entry.blend_opacity = +(bld[0]?.opacity ?? 0.4).toFixed(2);
+      }
+      out.materials[label] = entry;
+    }
+
+    const json = JSON.stringify(out, null, 2);
+    navigator.clipboard.writeText(json).then(() => {
+      saveBtn.textContent = 'copied!';
+      setTimeout(() => { saveBtn.textContent = 'copy JSON'; }, 1500);
+    }).catch(() => {
+      console.log('[hair settings]', json);
+      saveBtn.textContent = 'logged to console';
+      setTimeout(() => { saveBtn.textContent = 'copy JSON'; }, 1500);
+    });
+  });
+  body.appendChild(saveBtn);
 
   container.appendChild(root);
 }
