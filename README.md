@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://smorchj.github.io/metahuman-to-glb/">
-    <img src="assets/hero.png" alt="Ada — MetaHuman rendered in the three.js gallery" width="80%" />
+    <img src="assets/hero.png" alt="Ada, MetaHuman rendered in the three.js gallery" width="80%" />
   </a>
 </p>
 
@@ -12,129 +12,55 @@
   </a>
 </p>
 
-Deterministic five-stage pipeline that turns an Unreal Engine 5.7
-MetaHumanCharacter into a web-ready, Draco-compressed GLB with all 51
-ARKit blendshapes baked in, then publishes it as a browsable three.js
-viewer on GitHub Pages.
-
-The operator's job is to send a UE asset path and say "export this".
-Everything else is automated — UE assemble, Sequencer-baked ARKit
-shape keys, Blender material reconstruction, GLB compression, web
-viewer build. **One Haiku sub-agent runs each stage**; Opus only wires
-the dispatch.
+Five-stage pipeline that exports a UE 5.7 MetaHuman to a web-ready GLB with all 51 ARKit blendshapes, then deploys it as a three.js viewer on GitHub Pages.
 
 ## Live demo
 
-**https://smorchj.github.io/metahuman-to-glb/** — gallery built from
-`docs/` on every push to `main`.
+**https://smorchj.github.io/metahuman-to-glb/**
 
-## The 5 stages
+## Pipeline
 
 ```
-operator: "export /Game/Foo/MHC_Foo"
-   ↓
-00 — UE assemble                    (Haiku · ~1-2 min)
-01 — UE → GLB + Sequencer ARKit bake  (Haiku · ~1-2 min)
-02 — Blender assemble + ARKit shape keys + groom propagation (Haiku · ~60-90 s)
-03 — Blender → compressed GLB       (Haiku · ~30-60 s)
-04 — three.js webview               (Haiku · ~5 s)
-   ↓
-docs/characters/<id>/<id>.glb       (~40 MB, 51 ARKit blendshapes)
+"export /Game/Foo/MHC_Foo"
+   |
+   00: UE assemble                         (~1-2 min)
+   01: UE Sequencer ARKit bake + GLB       (~1-2 min)
+   02: Blender: ARKit shape keys + groom   (~60-90 s)
+   03: Blender: Draco-compressed GLB       (~30-60 s)
+   04: three.js viewer build               (~5 s)
+   |
+   docs/characters/<id>/<id>.glb            (~40 MB, 51 ARKit blendshapes)
 ```
 
-Each stage is a pure script (Python / PowerShell). Each runs inside
-its own Haiku sub-agent that loads only that stage's `CONTEXT.md` +
-the current character's manifest — nothing else. That's the whole
-isolation guarantee.
+Each stage is a Python or PowerShell script run by a Claude sub-agent. The agent reads only that stage's `CONTEXT.md` and the character manifest, runs the script, and updates its own status block. Nothing shares state across stages.
 
-## ARKit blendshapes — the trick
+## ARKit blendshapes
 
-UE's GLTFExporter strips morph names and bloats face GLBs to ~700 MB
-when you ask for the 858 raw RigLogic morphs. UE's
-`AnimSequence.get_anim_pose_at_frame()` only returns curve INPUTS, not
-resolved bone transforms. UE's RigLogic Python bindings aren't
-shipped (Epic engineer confirmed in
-[issue #43](https://github.com/EpicGames/MetaHuman-DNA-Calibration/issues/43)).
-Maya's the documented path, but you don't need it.
+UE's GLTFExporter strips morph names and outputs ~700 MB when you request the full 858 RigLogic morphs. `AnimSequence.get_anim_pose_at_frame()` returns curve inputs, not resolved bone transforms. RigLogic Python bindings aren't shipped (see [EpicGames/MetaHuman-DNA-Calibration #43](https://github.com/EpicGames/MetaHuman-DNA-Calibration/issues/43)).
 
-What works: build a transient Level Sequence with the
-`AS_MetaHuman_ARKit_Mapping` track at **24fps display rate**
-(matches source so each integer bake frame = one ARKit pose, no
-inter-pose blending). Call
-`SequencerTools.export_level_sequence_fbx()` — Sequencer's evaluator
-fires RigLogic + correctives + bone resolution natively, gives back
-an FBX with mesh + per-frame bone keyframes. Stage 02 replays that
-FBX in Blender, scrubs to each pose's frame, captures the deformed
-mesh via `evaluated_get(depsgraph)`, transfers shape keys to the GLB
-face by KDTree position match (max distance: 0.00mm — same UE SKM,
-same topology). Then propagates each ARKit shape onto eyebrow /
-mustache / beard card meshes with k=4 inverse-distance² weighting so
-the cards follow the face when a blendshape fires.
+The approach that works: build a transient Level Sequence with `AS_MetaHuman_ARKit_Mapping` at 24fps (one integer frame per ARKit pose), call `SequencerTools.export_level_sequence_fbx()`. Sequencer runs RigLogic + correctives natively and outputs an FBX with per-frame bone keyframes. Stage 02 replays that in Blender, scrubs to each frame, captures the deformed mesh via `evaluated_get(depsgraph)`, and transfers shape keys to the GLB face mesh by KDTree position match. Eyebrow, mustache, and beard card meshes get the same shapes propagated via k=4 inverse-distance-squared weighting.
 
-## How it works — ICM context layers
-
-The orchestration follows the **Interpretable Context Methodology**:
-the workspace is sliced into numbered folders, each with its own
-`CONTEXT.md` contract declaring exactly which inputs it reads and
-which outputs it writes. Opus authors those contracts once; Haiku
-runs them.
-
-When the operator says "export X":
-
-1. Opus reads `CLAUDE.md` (auto-loaded), sees the export-routing rule.
-2. Opus reads `5.7/native-glb/RUN.md`, the orchestrator playbook.
-3. Opus runs `tools/bootstrap_character.py` to create
-   `characters/<id>/` from the template.
-4. Opus dispatches **one Haiku per stage**, sequentially. Each Haiku
-   gets only its stage's `CONTEXT.md` + the character's manifest, runs
-   the stage's launcher, verifies outputs against the contract, and
-   updates **only its own** `stages.<NN>_*` block in the manifest.
-5. Opus reports the final GLB path.
-
-That stage isolation is load-bearing: if every stage pulled the whole
-repo, a cheap model would fail; if it only pulls its declared
-Inputs, it succeeds. The same isolation prevents an agent from
-"helpfully" fixing a sibling stage's status when state looks
-inconsistent — the dispatcher (Opus) owns cross-stage state, full
-stop.
-
-<p align="center">
-  <a href="https://smorchj.github.io/metahuman-to-glb/icm-agent-flow.html">
-    <img src="https://img.shields.io/badge/AGENT%20FLOW%20ANIMATION-watch%20how%20the%20context%20layers%20route-C084FC?style=for-the-badge&labelColor=0a0420" alt="agent flow animation" />
-  </a>
-</p>
-
-## Setup (one-time per machine)
+## Setup
 
 1. Clone the repo.
-2. Copy the config template:
+2. Copy the config template and fill in your local paths:
    ```
    cp _config/pipeline.example.yaml _config/pipeline.yaml
    ```
-   Edit the four `<...>` placeholders with your local paths to:
-   - your `.uproject` (UE 5.7) containing your MetaHumanCharacter assets
-   - `UnrealEditor-Cmd.exe`
-   - `blender.exe` (Blender 5.x)
-3. Have your MetaHumanCharacter ready in your UE 5.7 project under
-   `/Game/<Name>/`.
+   Required: `.uproject` path, `UnrealEditor-Cmd.exe`, `blender.exe` (5.x).
+3. Have your MetaHumanCharacter in the UE project under `/Game/<Name>/`.
 
-`_config/pipeline.yaml` is gitignored, so your local paths never leak
-into the repo.
+`_config/pipeline.yaml` is gitignored.
 
-## Running the pipeline
+## Usage
 
-In Claude Code (or any LLM that has tool access to your filesystem):
+In Claude Code:
 
 ```
-operator: "please export /Game/Ada/MHC_Ada"
+export /Game/Ada/MHC_Ada
 ```
 
-That's it. The orchestrator (Opus) handles bootstrap + dispatch; five
-Haiku sub-agents run the stages sequentially; final GLB lands at
-`5.7/native-glb/docs/characters/ada/ada.glb`.
-
-If you want to invoke a single stage directly, every stage has a
-PowerShell launcher:
+To run a single stage directly:
 
 ```powershell
 ./5.7/native-glb/stages/00-unreal-assemble/tools/run_assemble.ps1 -Char ada
@@ -147,104 +73,63 @@ PowerShell launcher:
 ## Layout
 
 ```
-<worktree>/
-  CONTEXT.md                           Layer 1 — task routing
-  CLAUDE.md                            Layer 0 — agent orientation
-  _config/pipeline.example.yaml        committed config template
-  _config/pipeline.yaml                gitignored — your local paths
+5.7/native-glb/
+  RUN.md                          orchestrator entry point
+  tools/bootstrap_character.py   scaffolds characters/<id>/
+  stages/
+    00-unreal-assemble/
+      CONTEXT.md                  stage contract
+      tools/run_assemble.ps1
+    01-unreal-glb-export/
+    02-blender-assemble/
+    03-export-to-glb/
+    04-webview-build/
+  characters/
+    _template/
+    <id>/manifest.json            per-stage status
+  docs/characters/<id>/<id>.glb   GitHub Pages output
 
-  5.7/native-glb/                      ← active pipeline
-    RUN.md                             operator entry point (Haiku-readable)
-    tools/bootstrap_character.py       character-folder scaffolder
-    stages/00-unreal-assemble/
-      CONTEXT.md                       stage contract (Haiku reads only this)
-      tools/run_assemble.ps1           stage launcher
-    stages/01-unreal-glb-export/
-    stages/02-blender-assemble/
-    stages/03-export-to-glb/
-    stages/04-webview-build/
-    characters/_template/              copied per character at bootstrap
-    characters/<id>/manifest.json      per-stage status (gitignored outputs)
-    docs/characters/<id>/<id>.glb      stage 04 output (GitHub Pages)
-
-  5.6/cinematic/                       legacy — see "Legacy & status" below
+5.6/cinematic/                    legacy pipeline
 ```
 
 ## Status
 
-This is a **fun side project** that grew up. Currently running against
-**Bo** and **Bruce** (5.7 native-glb) and **Ada** and **Taro** (5.6 cinematic)
-from Epic's MetaHuman demo set — all four are in the live gallery.
-Tested in Safari on iPhone X.
+Running with **Bo** and **Bruce** (5.7 native-glb) and **Ada** and **Taro** (5.6 cinematic). Tested in Safari on iPhone X.
 
-The 5.7 native-glb pipeline ships:
+What the 5.7 pipeline produces:
 
-- Full ARKit-52 blendshape support (51 keys; `tongueOut` requires a
-  rig variant Epic doesn't ship by default)
-- Bone-driven deformation magnitude correct (jawOpen ~33mm,
-  eyeBlinkLeft ~16mm, mouthSmileLeft ~18mm, etc.)
-- Eyebrow / mustache / beard card meshes follow the face on every
-  shape via inverse-distance-weighted shape-key propagation
-- Hair-card rendering: alpha-to-coverage primary (single-pass, depth-writes,
-  mobile-compatible), two-pass blend fallback, per-strand root darkening +
-  tint variance from atlas channels, anisotropic specular along strand tangent.
-  Per-character and per-material overrides (mode, colour, density).
-- Texture cap at 1024 px, Draco mesh compression, ~40 MB final GLB
-- MediaPipe FaceLandmarker driver in the viewer for live face capture
+- 51 ARKit blendshapes (`tongueOut` needs a non-default rig variant)
+- Correct deformation magnitudes (jawOpen ~33mm, eyeBlinkLeft ~16mm, etc.)
+- Facial hair card meshes follow face blendshapes via IDW propagation
+- Hair rendering: alpha-to-coverage primary, two-pass blend fallback. Per-strand root darkening and tint variance from atlas channels. Anisotropic specular along strand tangent. Per-character and per-material mode/colour/density overrides.
+- Texture cap 1024px, Draco compression, ~40 MB output
+- MediaPipe FaceLandmarker live face capture in the viewer
 
 Known gaps:
-- **Eyelash textures seem low-res.** Coverage texture may need
-  exemption from the 1024 px downsample cap or a higher-quality source.
-- **Eye occlusion has no alpha mask.** The eyeshell submesh renders
-  as a flat 40% dark layer across the entire eye — needs MH's
-  eyeshell occlusion mask wired as `alphaMap`
-  ([#19](https://github.com/smorchj/metahuman-to-glb/issues/19)).
-- **No scalp darkening under hair cards.** Hair cards sit on bare
-  head skin
-  ([#15](https://github.com/smorchj/metahuman-to-glb/issues/15)).
-- **Asymmetric brow expressions are muted.** ARKit's `browInnerUp`
-  is a single bilateral key (not split). Mitigation: per-side
-  `browInnerUpLeft/Right` extras can be added from raw RigLogic
-  morphs, but MediaPipe regresses them toward symmetry under low
-  signal ([#17](https://github.com/smorchj/metahuman-to-glb/issues/17),
-  [#18](https://github.com/smorchj/metahuman-to-glb/issues/18)).
-- **Morph weights don't round-trip through FBX**, only bones do.
-  Stage 02 captures bone-driven deformation but loses ~5-10mm of fine
-  morph corrective detail (lip squash, wrinkle deltas). Acceptable
-  trade for a fully-automated 5.7-native path.
-- **Clothing picks the wrong base colour.** Mask-blended
-  `diffuse_color_1/2` aren't wired through correctly
-  ([#12](https://github.com/smorchj/metahuman-to-glb/issues/12)).
 
-## Legacy & 5.6 cinematic
+- Eyelash textures look low-res. The 1024px downsample cap may be hurting coverage textures ([#13](https://github.com/smorchj/metahuman-to-glb/issues/13)).
+- Eye occlusion mesh has no alpha mask. Currently renders as a flat 40% dark layer over the whole eye ([#19](https://github.com/smorchj/metahuman-to-glb/issues/19)).
+- No scalp darkening under hair cards ([#15](https://github.com/smorchj/metahuman-to-glb/issues/15)).
+- `browInnerUp` is a single bilateral blendshape. Left/right asymmetry is lost ([#17](https://github.com/smorchj/metahuman-to-glb/issues/17), [#18](https://github.com/smorchj/metahuman-to-glb/issues/18)).
+- FBX bake captures bone deformation only. Fine morph correctives (lip squash, wrinkle deltas) are lost (~5-10mm).
+- Clothing base colour is wrong. Mask-blended `diffuse_color_1/2` not wired through ([#12](https://github.com/smorchj/metahuman-to-glb/issues/12)).
 
-The original pipeline targeted UE 5.6.1 + the Cinematic build profile
-(see `5.6/cinematic/`). Stage layout there is 4 stages (no UE-side
-assemble) and ARKit shapes were transplanted from a precomputed NPZ.
-It still works for the demo characters that were exported with it but
-is no longer the recommended path. The 5.7 native-glb pipeline is
-self-contained and produces real ARKit deformation magnitudes that
-the 5.6 NPZ transplant couldn't.
+## Legacy
 
-A parallel `5.7/cinematic/` directory exists but is **unfinished** —
-kept around for reference, not for production use.
+The 5.6 cinematic pipeline (`5.6/cinematic/`) used a precomputed NPZ to transplant ARKit shapes. Still works for Ada and Taro but is no longer the recommended path. The 5.7 pipeline derives ARKit deformation natively.
+
+`5.7/cinematic/` exists but is unfinished.
 
 ## Contributing
 
-Open source under the **MIT license**. PRs very welcome — especially
-on the gaps above. File an issue first if it's a bigger architectural
-change so we don't duplicate work.
+MIT license. PRs welcome. File an issue before larger architectural changes.
 
-The architecture invariants worth respecting:
+Rules worth keeping:
 
-1. **Per-version + per-pipeline boundary is hard.**
-   `5.7/native-glb/` does not import from `5.6/cinematic/`.
-2. **Stage isolation is load-bearing.** A stage agent reads only its
-   own `CONTEXT.md` + Inputs; it updates only its own manifest block.
-3. **Scripts transform; LLMs glue.** Every deterministic computation
-   lives in `*.py` / `*.ps1`. Models call those scripts and verify
-   outputs.
+- `5.7/native-glb/` does not import from `5.6/cinematic/`.
+- A stage agent reads and writes only its own manifest block.
+- Deterministic work goes in scripts. Models call scripts and verify outputs.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
