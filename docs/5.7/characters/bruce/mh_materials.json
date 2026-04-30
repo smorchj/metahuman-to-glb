@@ -1,0 +1,97 @@
+{
+  "character": "ada",
+  "saved_at": "2026-04-30T09:48:18Z",
+  "materials": [
+    {
+      "material_name": "Beard_M_MuttonChops_CardMesh_Group0_LOD0_CardMat",
+      "kind": "hair",
+      "params": {
+        "base_color": [
+          0.09548600018024445,
+          0.09133599698543549,
+          0.09164000302553177,
+          1.0
+        ],
+        "alpha_clip": true,
+        "alpha_channel": "r",
+        "alpha_stem": "Beard_M_MuttonChops_CardsAtlas_Attribute",
+        "roughness": 0.55,
+        "ignore_gltf_map": true
+      },
+      "textures": {}
+    },
+    {
+      "material_name": "Eyebrows_M_FlatThick_CardsMesh_Group0_LOD0_CardMat",
+      "kind": "hair",
+      "params": {
+        "base_color": [
+          0.048952105465071366,
+          0.03173789477531618,
+          0.018773684204770293,
+          1.0
+        ],
+        "alpha_clip": true,
+        "alpha_channel": "r",
+        "alpha_stem": "Eyebrows_M_FlatThick_CardsAtlas_Attribute",
+        "roughness": 0.55,
+        "ignore_gltf_map": true
+      },
+      "textures": {}
+    },
+    {
+      "material_name": "Hair_S_Casual_CardsMesh_Group0_LOD0_CardMat",
+      "kind": "hair",
+      "params": {
+        "base_color": [
+          0.005960208700845471,
+          0.0036457758930670717,
+          0.00208915656359127,
+          1.0
+        ],
+        "alpha_clip": true,
+        "alpha_channel": "r",
+        "alpha_stem": "Hair_S_Casual_CardsAtlas_Attribute",
+        "roughness": 0.55,
+        "ignore_gltf_map": true
+      },
+      "textures": {}
+    },
+    {
+      "material_name": "Mustache_S_Horseshoe_CardMesh_Group0_LOD0_CardMat",
+      "kind": "hair",
+      "params": {
+        "base_color": [
+          0.03539253287414171,
+          0.021649114925929688,
+          0.012405696858508376,
+          1.0
+        ],
+        "alpha_clip": true,
+        "alpha_channel": "r",
+        "alpha_stem": "Mustache_S_Horseshoe_CardsAtlas_Attribute",
+        "roughness": 0.55,
+        "ignore_gltf_map": true
+      },
+      "textures": {}
+    },
+    {
+      "material_name": "SKM_Bruce_FaceMesh.001_LashMat",
+      "kind": "face_accessory",
+      "face_slot": "eyelashes",
+      "params": {
+        "base_color": [
+          0.048952105465071366,
+          0.03173789477531618,
+          0.018773684204770293,
+          1.0
+        ],
+        "alpha_clip": true,
+        "roughness": 0.55,
+        "ignore_gltf_map": true
+      },
+      "textures": {
+        "alpha": "textures/T_Eyelashes_S_Sparse_Coverage.png"
+      }
+    }
+  ]
+}

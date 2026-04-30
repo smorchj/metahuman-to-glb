@@ -5,6 +5,31 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MetaHuman gallery</title>
   <link rel="stylesheet" href="assets/style.css" />
+  <style>
+    .section-header {
+      padding: 20px 32px 0;
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+    .section-header h2 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .section-header .tag {
+      font-size: 11px;
+      color: var(--accent);
+      background: rgba(124,196,255,0.1);
+      padding: 2px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.03em;
+    }
+    .section-header .desc {
+      color: var(--muted);
+      font-size: 12px;
+    }
+  </style>
 </head>
 <body class="gallery">
   <header>
@@ -12,15 +37,29 @@
     <p class="sub">Characters exported from Unreal Engine to web-ready GLB.</p>
   </header>
 
+  <div class="section-header">
+    <h2><a href="5.7/index.html">5.7 native-glb</a></h2>
+    <span class="tag">latest</span>
+    <span class="desc">A2C hair, full ARKit-52 blendshapes, Draco compressed</span>
+  </div>
   <main class="grid">
-    <a class="card" href="characters/ada/index.html"><img class="card-preview" src="characters/ada/thumbnail.png?v=20260420T191340Z" alt="ada" loading="lazy" /><div class="meta"><span class="name">ada</span><span class="stats"><span>191,088 tris</span><span>&middot;</span><span>51.0 MiB</span></span></div></a>
-    <a class="card" href="characters/taro/index.html"><img class="card-preview" src="characters/taro/thumbnail.png?v=20260420T191340Z" alt="taro" loading="lazy" /><div class="meta"><span class="name">taro</span><span class="stats"><span>190,784 tris</span><span>&middot;</span><span>76.3 MiB</span></span></div></a>
+    <a class="card" href="5.7/characters/bo/index.html"><img class="card-preview" src="5.7/characters/bo/preview.png" alt="bo" loading="lazy" /><div class="meta"><span class="name">bo</span><span class="stats"><span>168,226 tris</span><span>&middot;</span><span>39.6 MiB</span></span></div></a>
+    <a class="card" href="5.7/characters/bruce/index.html"><img class="card-preview" src="5.7/characters/bruce/preview.png" alt="bruce" loading="lazy" /><div class="meta"><span class="name">bruce</span><span class="stats"><span>190,364 tris</span><span>&middot;</span><span>75.2 MiB</span></span></div></a>
+  </main>
+
+  <div class="section-header" style="margin-top:8px">
+    <h2>5.6 cinematic</h2>
+    <span class="desc">Legacy pipeline, NPZ-transplanted ARKit shapes</span>
+  </div>
+  <main class="grid">
+    <a class="card" href="characters/ada/index.html"><img class="card-preview" src="characters/ada/thumbnail.png" alt="ada" loading="lazy" /><div class="meta"><span class="name">ada</span><span class="stats"><span>191,088 tris</span><span>&middot;</span><span>51.0 MiB</span></span></div></a>
+    <a class="card" href="characters/taro/index.html"><img class="card-preview" src="characters/taro/thumbnail.png" alt="taro" loading="lazy" /><div class="meta"><span class="name">taro</span><span class="stats"><span>190,784 tris</span><span>&middot;</span><span>76.3 MiB</span></span></div></a>
   </main>
 
   <footer>
-    <span>2 characters</span>
+    <span>4 characters</span>
     <span>&middot;</span>
-    <span>built 2026-04-20T19:13:40Z</span>
+    <span>2 pipelines</span>
   </footer>
 </body>
 </html>
