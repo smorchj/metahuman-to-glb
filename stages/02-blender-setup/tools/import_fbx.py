@@ -1251,6 +1251,138 @@ def _scene_summary():
     }
 
 
+def _merge_armatures():
+    """Consolidate every imported armature into one canonical skeleton.
+
+    Why: each MH skeletal-mesh FBX imports its own copy of the MH rig —
+    typically `root` (face + face bones), `Root` (body only),
+    `root.001` (body duplicate), etc. They describe the same UE skeleton
+    but each is a distinct Blender Object, and Blender's glTF exporter
+    emits one Skin per Armature. A glTF consumer's `AnimationMixer`
+    drives bones by name, but ONLY in the armature it's bound to —
+    cross-mesh animation breaks (face mesh weighted to `FACIAL_*` bones
+    that live in armature A doesn't follow when armature B's `head`
+    rotates).
+
+    The fix is a superset armature:
+      1. Pick the body-style canonical ("Root" — has hands, fingers,
+         IK helpers, twist + corrective bones). Fall back to whichever
+         has 'hand_l' if "Root" is absent.
+      2. Graft any bones present in donor armatures but missing from
+         the canonical (FACIAL_*, anything else specific to face/groom)
+         as new bones under their original parents, preserving local
+         transforms via world-space round-trip through donor and
+         canonical matrix_world.
+      3. Switch every skinned mesh's Armature modifier to the canonical.
+      4. Re-parent every mesh that was object-parented to a donor.
+      5. Delete donor armatures.
+
+    Returns a summary dict for blend_manifest.json.
+    """
+    armatures = [o for o in bpy.data.objects if o.type == "ARMATURE"]
+    if len(armatures) <= 1:
+        return {"status": "noop", "armature_count_before": len(armatures)}
+
+    canonical = bpy.data.objects.get("Root")
+    if canonical is None or canonical.type != "ARMATURE":
+        for o in armatures:
+            if "hand_l" in {b.name for b in o.data.bones}:
+                canonical = o
+                break
+    if canonical is None:
+        canonical = armatures[0]
+    print(
+        f"[stage02:merge-armatures] canonical={canonical.name} "
+        f"({len(canonical.data.bones)} bones)",
+        flush=True,
+    )
+
+    donors = [o for o in armatures if o is not canonical]
+    canonical_names = {b.name for b in canonical.data.bones}
+
+    # Collect donor bone metadata (in canonical-armature local space) before
+    # entering Edit mode — once in Edit mode the data API differs.
+    to_graft = {}
+    surv_inv = canonical.matrix_world.inverted()
+    for donor in donors:
+        for b in donor.data.bones:
+            if b.name in canonical_names:
+                continue
+            if b.name in to_graft:
+                continue  # first donor wins on collisions
+            world_head = donor.matrix_world @ b.head_local
+            world_tail = donor.matrix_world @ b.tail_local
+            to_graft[b.name] = {
+                "head": surv_inv @ world_head,
+                "tail": surv_inv @ world_tail,
+                "parent": b.parent.name if b.parent else None,
+            }
+
+    if to_graft:
+        bpy.context.view_layer.objects.active = canonical
+        bpy.ops.object.mode_set(mode="EDIT")
+        eb = canonical.data.edit_bones
+        # Pass 1 — create all bones with placeholder roll. They'll exist
+        # before pass 2 tries to wire parents that may also be new.
+        for name, d in to_graft.items():
+            new_bone = eb.new(name)
+            new_bone.head = d["head"]
+            new_bone.tail = d["tail"]
+            new_bone.roll = 0
+        # Pass 2 — hook up parent relationships. Parents may live in
+        # canonical (existing) or in the just-grafted set.
+        for name, d in to_graft.items():
+            pn = d["parent"]
+            if pn and pn in eb:
+                eb[name].parent = eb[pn]
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+    grafted = len(to_graft)
+    print(
+        f"[stage02:merge-armatures] grafted {grafted} bones "
+        f"(canonical now {len(canonical.data.bones)} bones)",
+        flush=True,
+    )
+
+    # Switch every mesh's Armature modifier + object Parent to canonical.
+    donor_set = set(donors)
+    swapped_modifiers = 0
+    reparented = 0
+    for obj in list(bpy.data.objects):
+        if obj.type != "MESH":
+            continue
+        for mod in obj.modifiers:
+            if mod.type == "ARMATURE" and mod.object in donor_set:
+                mod.object = canonical
+                swapped_modifiers += 1
+        if obj.parent in donor_set:
+            world_matrix = obj.matrix_world.copy()
+            obj.parent = canonical
+            obj.matrix_world = world_matrix
+            reparented += 1
+
+    # Delete the now-orphan donor armatures.
+    for donor in donors:
+        bpy.data.objects.remove(donor, do_unlink=True)
+    deleted = len(donors)
+
+    print(
+        f"[stage02:merge-armatures] swapped {swapped_modifiers} modifiers, "
+        f"reparented {reparented} meshes, deleted {deleted} donor armatures",
+        flush=True,
+    )
+
+    return {
+        "status": "merged",
+        "canonical": canonical.name,
+        "armature_count_before": len(armatures),
+        "armature_count_after": 1,
+        "grafted_bones": grafted,
+        "swapped_modifiers": swapped_modifiers,
+        "reparented_meshes": reparented,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Web-renderer material mapping
 #
@@ -1454,6 +1586,17 @@ def main():
         grooms_summary = {"error": str(exc)}
         print(f"[stage02] ERROR apply_arkit52_grooms: {exc}", flush=True)
 
+    # Armature merge — consolidate the per-FBX skeletons into one
+    # canonical armature so a single AnimationMixer downstream can drive
+    # every skinned mesh. Must run BEFORE saving the blend. See the
+    # function's docstring for why.
+    try:
+        merge_summary = _merge_armatures()
+    except Exception as exc:
+        merge_summary = {"status": "failed", "error": str(exc)}
+        print(f"[stage02] ERROR merge_armatures: {exc}", flush=True)
+    print(f"[stage02] armature merge: {merge_summary}", flush=True)
+
     applied = _wire_materials(mh, in_root)
     with_tex = sum(1 for a in applied if a["textures"])
     print(f"[stage02] wired {len(applied)} material slots "
@@ -1475,6 +1618,7 @@ def main():
         "materials_applied": applied,
         "arkit52":      arkit_summary,
         "arkit52_grooms": grooms_summary,
+        "armature_merge": merge_summary,
     }
     bm_path = os.path.join(out_root, "blend_manifest.json")
     with open(bm_path, "w", encoding="utf-8") as f:

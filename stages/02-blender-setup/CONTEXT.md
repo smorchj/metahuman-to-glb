@@ -1,8 +1,8 @@
 # Stage 02 — Blender Setup
 
 Headless Blender stage. Consumes stage 01's FBXs + manifest; imports them into a clean
-scene, wires up minimal PBR materials on LOD0, and saves a `.blend`. Armature merge
-and clothing fit-up are planned but not implemented yet.
+scene, wires up minimal PBR materials on LOD0, **consolidates every per-FBX armature
+into one canonical skeleton**, and saves a `.blend`. Clothing fit-up is still TODO.
 
 ## Inputs
 
@@ -32,7 +32,7 @@ and clothing fit-up are planned but not implemented yet.
 
 | Artifact | Location | Notes |
 |---|---|---|
-| Assembled blend file | `characters/<id>/02-blend/<id>.blend` | All mesh FBXs imported; non-LOD0 meshes hidden (viewport + render); one armature per imported FBX (not merged yet). |
+| Assembled blend file | `characters/<id>/02-blend/<id>.blend` | All mesh FBXs imported; non-LOD0 meshes hidden (viewport + render); every imported armature consolidated into the canonical `Root` (FACIAL_* and other donor-only bones grafted under their original parents). |
 | Scene manifest | `characters/<id>/02-blend/blend_manifest.json` | Machine-readable scene summary |
 | Updated char manifest | `characters/<id>/manifest.json` | `stages.02_blender_setup` fields |
 
@@ -48,9 +48,18 @@ and clothing fit-up are planned but not implemented yet.
   "scene": {
     "object_count": 39,
     "mesh_count": 24,
-    "armature_count": 5,
+    "armature_count": 1,
     "mesh_names": ["Ada_FaceMesh_LOD0", "..."],
-    "armature_names": ["root", "root.001", "..."]
+    "armature_names": ["Root"]
+  },
+  "armature_merge": {
+    "status": "merged",
+    "canonical": "Root",
+    "armature_count_before": 3,
+    "armature_count_after": 1,
+    "grafted_bones": 843,
+    "swapped_modifiers": 2,
+    "reparented_meshes": 0
   },
   "hidden_non_lod0": ["Ada_FaceMesh_LOD1", "..."],
   "materials_applied": [
@@ -76,6 +85,16 @@ pass `-SkipPreview` to skip it (preview is not a required Output).
 - **All LODs imported as sibling meshes** named `<Component>_LOD<N>`. Non-LOD0 are
   hidden in viewport + render; geometry still lives in the file. Stage 03 will pick
   per-LOD subsets when exporting per-LOD GLBs.
+- **Armature merge — now implemented.** Each MH skeletal mesh FBX still embeds its
+  own copy of the skeleton at import (`root`, `root.001`, `root.002`, …), but the
+  stage's `_merge_armatures()` step at the end of import consolidates them into
+  one canonical armature ("Root", or whichever imported armature carries `hand_l`).
+  Bones present only in donor armatures (FACIAL_* lives on the face FBX's `root`)
+  are grafted under their original parents; every mesh's Armature modifier and
+  Parent are switched to canonical; donor armatures are deleted. Result: one
+  superset skeleton drives every skinned mesh, so a downstream AnimationMixer
+  can play a single locomotion clip without face-skin displacement. Merge
+  summary lands in `blend_manifest.json` under `armature_merge`.
 - **One armature per FBX** — every MH skeletal mesh FBX embeds its own copy of the
   skeleton, so Blender imports `root`, `root.001`, `root.002`, … These must be
   deduplicated / merged before stage 03; not done in v0.
