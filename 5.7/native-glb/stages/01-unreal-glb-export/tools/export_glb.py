@@ -742,9 +742,18 @@ def main():
         for prefix, plugin_dir in style_to_plugin:
             if style.startswith(prefix):
                 for atlas_kind in ("Attribute", "Tangent"):
-                    plugin_atlas_paths.append(
-                        f"{plugin_dir}/{style}/{style}_CardsAtlas_{atlas_kind}"
-                        f".{style}_CardsAtlas_{atlas_kind}")
+                    # Epic's MetaHuman plugin ships Beard_M_Curly's
+                    # atlases as "CardsAltas" (typo: "Altas" instead of
+                    # "Atlas"). Every other groom uses the correct
+                    # spelling. Append BOTH paths; load_asset returns
+                    # None for the one that doesn't exist and the loop
+                    # below silently skips it. The output filename is
+                    # normalised back to the canonical spelling so
+                    # stage 02 only needs to know one name.
+                    for spelling in ("CardsAtlas", "CardsAltas"):
+                        plugin_atlas_paths.append(
+                            f"{plugin_dir}/{style}/{style}_{spelling}_{atlas_kind}"
+                            f".{style}_{spelling}_{atlas_kind}")
                 matched = True
                 break
         if matched:
@@ -760,9 +769,15 @@ def main():
             _log(f"    sidecar: load {p} raised: {e}")
             continue
         if tex is None:
-            _log(f"    sidecar: load {p} returned None")
+            # Expected: the dual-spelling fallback above appends both
+            # "CardsAtlas" and "CardsAltas" candidates per groom, so
+            # exactly one of every pair returns None. Not an error.
             continue
-        tex_name = tex.get_name()
+        # Normalise Epic's "CardsAltas" typo (currently only on
+        # Beard_M_Curly) so the file on disk uses the canonical
+        # spelling. Stage 02 sidecar resolution then has to know
+        # only one name.
+        tex_name = tex.get_name().replace("CardsAltas", "CardsAtlas")
         rel = f"textures/{tex_name}.png"
         abs_path = os.path.join(textures_dir, f"{tex_name}.png")
         try:

@@ -1752,6 +1752,96 @@ def _remove_gltf_placeholder_empties():
     return removed
 
 
+def _merge_armatures():
+    """Collapse every armature in the scene into a single one so the
+    final GLB ships with one `skins[]` entry instead of one per
+    SkeletalMesh.
+
+    UE's glTF exporter writes each MetaHuman SkeletalMesh as its own
+    .glb, each carrying its own skin. Stage 01 imports the face,
+    body, and outfits as separate .glbs, so we end up with 3
+    armatures in Blender — face (full MH facial rig + spine + head),
+    body (spine + limbs), and outfits (same as body). They all
+    reference the same underlying UE skeleton, so trunk bones (head,
+    neck, spine_*) appear in every armature with identical names and
+    rest transforms.
+
+    Strategy:
+      1. Pick the armature with the MOST bones as the master (the
+         face armature; it carries the facial rig + the full spine).
+      2. Re-target every mesh's Armature modifier and every child
+         object's parent to point at the master.
+      3. `object.join()` the others into the master. Blender renames
+         conflicting trunk bones with `.001` / `.002` / ... suffixes;
+         that's fine because mesh vertex groups continue to reference
+         the ORIGINAL bone name, which after join resolves to the
+         master's bone (anatomically identical position).
+      4. Prune the orphaned suffix-bones the join left behind so the
+         final skin doesn't carry dead joints.
+    """
+    armatures = [o for o in bpy.data.objects if o.type == "ARMATURE"]
+    if len(armatures) <= 1:
+        return 0
+
+    # Master = the largest armature (the face rig).
+    armatures.sort(key=lambda a: -len(a.data.bones))
+    master = armatures[0]
+    others = armatures[1:]
+    others_set = set(others)
+
+    _log(f"  merging {len(others)} armature(s) into '{master.name}' "
+         f"({len(master.data.bones)} bones)")
+    for a in others:
+        _log(f"    - '{a.name}' ({len(a.data.bones)} bones)")
+
+    # Retarget mesh Armature modifiers BEFORE the join (after join,
+    # `others` are deleted and dangling modifier pointers would land
+    # on None).
+    for obj in bpy.data.objects:
+        if obj.type != "MESH":
+            continue
+        for mod in obj.modifiers:
+            if mod.type == "ARMATURE" and mod.object in others_set:
+                mod.object = master
+
+    # Reparent objects whose parent is one of the others.
+    for obj in bpy.data.objects:
+        if obj.parent in others_set:
+            world_mat = obj.matrix_world.copy()
+            obj.parent = master
+            obj.matrix_world = world_mat
+
+    # Join. Active = master; selected = master + all others.
+    bpy.ops.object.select_all(action="DESELECT")
+    for arm in armatures:
+        arm.select_set(True)
+    bpy.context.view_layer.objects.active = master
+    bpy.ops.object.join()
+
+    # Prune orphaned suffix-bones (e.g. "head.001", "spine_03.002").
+    # These are duplicates of trunk bones already in the master from
+    # the original face armature; the join auto-suffixed them on
+    # name collision. Nothing references them via vertex groups
+    # because the meshes still look up by the un-suffixed name.
+    import re
+    bpy.context.view_layer.objects.active = master
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = master.data.edit_bones
+    existing = {b.name for b in eb}
+    suffix_re = re.compile(r"^(.+)\.\d+$")
+    pruned = 0
+    for b in list(eb):
+        m = suffix_re.match(b.name)
+        if m and m.group(1) in existing:
+            eb.remove(eb[b.name])
+            pruned += 1
+    bpy.ops.object.mode_set(mode="OBJECT")
+    if pruned:
+        _log(f"  pruned {pruned} duplicate suffix-bone(s) after join")
+
+    return len(others)
+
+
 def main():
     args = _parse()
     ws = os.path.abspath(args.workspace)
@@ -1878,6 +1968,15 @@ def main():
     scalp_darkened = _bake_scalp_darkening()
     if scalp_darkened:
         _log(f"baked scalp darkening onto {scalp_darkened} face vert(s)")
+
+    # Collapse face / body / outfits armatures into one so the final
+    # GLB ships with a single skins[] entry. Stage 01 emits one .glb
+    # per MH SkeletalMesh (each with its own embedded skin), and the
+    # standard import path keeps them separate; that's wasteful and
+    # makes it impossible to drive everything off a single animation.
+    merged_armatures = _merge_armatures()
+    if merged_armatures:
+        _log(f"merged {merged_armatures} extra armature(s) into the face armature")
 
     # Save blend
     blend_path = os.path.join(out_root, f"{args.char}.blend")
