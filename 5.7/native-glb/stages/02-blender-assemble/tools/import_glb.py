@@ -1910,6 +1910,155 @@ def _patch_lod_primitives_from_lod0():
     return patched
 
 
+def _propagate_arkit_to_lod_meshes():
+    """Propagate LOD0's ARKit shape keys onto every LOD>0 face mesh
+    via k=4 inverse-distance² weighting from LOD0.
+
+    Epic ships LOD0 with the 52 ARKit blendshapes; the LOD>0 face
+    meshes carry no shape keys. We want device-based LOD scaling
+    (lower-end hardware snaps to a higher LOD index even when the
+    face is shown up close), so every LOD has to animate from ARKit
+    input — not just LOD0 at viewing distance.
+
+    Runs AFTER _patch_lod_primitives_from_lod0(). The eye-region
+    verts on each LOD>0 were duplicated from LOD0 and therefore sit
+    at exactly the same world position as their LOD0 sources →
+    nn_dist≈0 → they inherit LOD0's deltas with near-zero blending
+    error. The decimated skin verts on LOD>0 pick up a weighted
+    blend of their ~4 closest LOD0 skin verts; facial morph deltas
+    (jaw open, cheek raise, brow furrow) are spatially smooth across
+    the face so this is a sensible approximation.
+
+    Mirrors _apply_arkit_to_grooms — world-space deltas so any
+    residual transform mismatch between LOD0 and LOD>0 face meshes
+    is handled safely (after _merge_armatures the matrices are
+    usually identical, but we don't depend on it)."""
+    import re
+    import numpy as np
+    from mathutils.kdtree import KDTree
+    from mathutils import Vector
+
+    K = 4
+    EPS = 1e-8
+
+    lod_re = re.compile(r"^(.+)_LOD(\d+)$")
+    face_meshes = {}
+    for o in bpy.data.objects:
+        if o.type != "MESH":
+            continue
+        m = lod_re.match(o.name)
+        if not m:
+            continue
+        stem, lod = m.group(1), int(m.group(2))
+        if "facemesh" not in stem.lower():
+            continue
+        face_meshes[lod] = o
+
+    lod0 = face_meshes.get(0)
+    if lod0 is None or len(face_meshes) <= 1:
+        _log("  propagate_arkit_to_lods: no LOD>0 face meshes to populate")
+        return 0
+
+    sk0 = lod0.data.shape_keys
+    if sk0 is None or len(sk0.key_blocks) <= 1:
+        _log("  propagate_arkit_to_lods: LOD0 has no shape keys, skipping")
+        return 0
+
+    basis0_local = np.empty(len(sk0.key_blocks[0].data) * 3, dtype=np.float32)
+    sk0.key_blocks[0].data.foreach_get("co", basis0_local)
+    basis0_local = basis0_local.reshape(-1, 3)
+
+    R0 = np.array(lod0.matrix_world, dtype=np.float64)[:3, :3]
+    t0 = np.array(lod0.matrix_world, dtype=np.float64)[:3, 3]
+    basis0_world = basis0_local.astype(np.float64) @ R0.T + t0
+
+    deltas_world = {}
+    for kb in sk0.key_blocks:
+        if kb.name == "Basis":
+            continue
+        pos = np.empty(len(kb.data) * 3, dtype=np.float32)
+        kb.data.foreach_get("co", pos)
+        d_local = pos.reshape(-1, 3) - basis0_local
+        if not np.any(np.abs(d_local) > 1e-7):
+            continue
+        # delta is a direction vector; only R rotates it, t cancels.
+        deltas_world[kb.name] = d_local.astype(np.float64) @ R0.T
+
+    if not deltas_world:
+        _log("  propagate_arkit_to_lods: LOD0 shape keys all zero")
+        return 0
+
+    tree = KDTree(basis0_world.shape[0])
+    for i, p in enumerate(basis0_world):
+        tree.insert(Vector((float(p[0]), float(p[1]), float(p[2]))), i)
+    tree.balance()
+
+    _log(f"  propagate_arkit_to_lods: LOD0 verts={basis0_world.shape[0]} "
+         f"keys={len(deltas_world)}")
+
+    total_keys = 0
+    for lod, target in sorted(face_meshes.items()):
+        if lod == 0:
+            continue
+
+        verts_local = np.empty(len(target.data.vertices) * 3, dtype=np.float32)
+        target.data.vertices.foreach_get("co", verts_local)
+        verts_local = verts_local.reshape(-1, 3).astype(np.float64)
+        Rg = np.array(target.matrix_world, dtype=np.float64)[:3, :3]
+        tg = np.array(target.matrix_world, dtype=np.float64)[:3, 3]
+        verts_world = verts_local @ Rg.T + tg
+        N = verts_world.shape[0]
+
+        nn_idx = np.empty((N, K), dtype=np.int64)
+        nn_dist = np.empty((N, K), dtype=np.float64)
+        for vi in range(N):
+            p = verts_world[vi]
+            results = tree.find_n(
+                Vector((float(p[0]), float(p[1]), float(p[2]))), K)
+            for k, (_co, idx, d) in enumerate(results):
+                nn_idx[vi, k] = idx
+                nn_dist[vi, k] = d
+
+        w = 1.0 / (nn_dist * nn_dist + EPS)
+        w /= w.sum(axis=1, keepdims=True)
+
+        # Wipe any prior shape keys on the LOD mesh — the eye-region
+        # patch joins in a donor that was already stripped, but a
+        # fresh import might still have a stale Basis here.
+        if target.data.shape_keys is None:
+            target.shape_key_add(name="Basis", from_mix=False)
+        existing = [kb.name for kb in target.data.shape_keys.key_blocks
+                    if kb.name != "Basis"]
+        for n in reversed(existing):
+            target.shape_key_remove(target.data.shape_keys.key_blocks[n])
+
+        Rg_inv = np.linalg.inv(Rg)
+
+        created = 0
+        skipped = []
+        for key_name, d0_world in deltas_world.items():
+            sampled_world = np.einsum("vk,vkd->vd", w, d0_world[nn_idx])
+            if not np.any(np.abs(sampled_world) > 1e-6):
+                skipped.append(key_name)
+                continue
+            sampled_local = sampled_world @ Rg_inv.T
+            new_positions = (verts_local + sampled_local).astype(np.float32)
+            kb = target.shape_key_add(name=key_name, from_mix=False)
+            # Match groom path: glTF exporter writes shape_key.value
+            # into mesh.weights → zombie at rest if non-zero.
+            kb.value = 0.0
+            kb.data.foreach_set("co", new_positions.reshape(-1))
+            created += 1
+
+        nn0 = nn_dist[:, 0]
+        _log(f"  propagate_arkit_to_lods: LOD{lod} verts={N} keys_created={created} "
+             f"skipped_zero={len(skipped)} nn0_mean={nn0.mean()*1000:.2f}mm "
+             f"p95={np.percentile(nn0, 95)*1000:.2f}mm")
+        total_keys += created
+
+    return total_keys
+
+
 def _merge_armatures():
     """Collapse every armature in the scene into a single one so the
     final GLB ships with one `skins[]` entry instead of one per
@@ -2151,6 +2300,15 @@ def main():
     patched_lods = _patch_lod_primitives_from_lod0()
     if patched_lods:
         _log(f"patched {patched_lods} non-LOD0 face mesh(es) with LOD0 eye region")
+
+    # Propagate LOD0's 52 ARKit shape keys onto every LOD>0 face mesh
+    # via k=4 inverse-distance² weighting from the LOD0 verts.
+    # Without this, LOD>0 reads correct geometrically but every
+    # blendshape slider goes dead — the face freezes at rest when
+    # the device is forced onto a higher LOD.
+    lod_keys = _propagate_arkit_to_lod_meshes()
+    if lod_keys:
+        _log(f"propagated {lod_keys} shape key(s) onto LOD>0 face mesh(es)")
 
     # Save blend
     blend_path = os.path.join(out_root, f"{args.char}.blend")
