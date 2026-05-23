@@ -1772,6 +1772,144 @@ def _remove_gltf_placeholder_empties():
     return removed
 
 
+def _patch_lod_primitives_from_lod0():
+    """Epic's MetaHuman LOD pipeline strips eye-region primitives at
+    low LODs — LOD3-4 lose the lacrimal fluid and (LOD4+) the
+    eyelashes, LOD5-7 drop one of the two eyeballs entirely. The skin
+    still renders fine but the eye region reads broken: the eye
+    shell hangs there with nothing underneath, or one socket is
+    just a black hole.
+
+    For our viewer (and the upcoming face-scan workflow that needs
+    device-based LOD scaling, not distance-based) every LOD should
+    carry the full eye-region geometry. This pass grafts LOD0's eye
+    primitives (EyeL, EyeR, EyeShell, Eyelashes, LacrimalFluid) into
+    every non-LOD0 face mesh, deleting that mesh's existing eye-area
+    faces first so we don't double up.
+
+    Runs AFTER _merge_armatures so LOD0 and LODn share a skeleton —
+    vertex groups on the grafted eye geometry resolve to bones that
+    exist on every LOD's armature modifier.
+
+    Shape keys are NOT propagated here. LOD0 carries the 51 ARKit
+    keys but they only target LOD0's vertex order; LODn meshes stay
+    blendshape-free in this pass and pick up keys in a separate
+    later step (inverse-distance² weighting from LOD0)."""
+    import re
+    EYE_MAT_KEYWORDS = (
+        "eyel_baked", "eyer_baked",
+        "eyeshell", "lashmat", "lacrimalfluid",
+    )
+
+    def _is_eye_material(mat):
+        if mat is None or not mat.name:
+            return False
+        n = mat.name.lower()
+        return any(k in n for k in EYE_MAT_KEYWORDS)
+
+    # Collect face-mesh LODs by index.
+    face_meshes = {}
+    lod_re = re.compile(r"^(.+)_LOD(\d+)$")
+    for o in bpy.data.objects:
+        if o.type != "MESH":
+            continue
+        m = lod_re.match(o.name)
+        if not m:
+            continue
+        stem, lod = m.group(1), int(m.group(2))
+        if "facemesh" not in stem.lower():
+            continue
+        face_meshes[lod] = o
+
+    lod0 = face_meshes.get(0)
+    if lod0 is None or len(face_meshes) <= 1:
+        _log("  patch_lod_primitives: no LOD>0 face meshes to patch")
+        return 0
+
+    patched = 0
+    for lod, target in sorted(face_meshes.items()):
+        if lod == 0:
+            continue
+
+        # 1. Delete the eye-region faces in this LOD (whatever Epic
+        # shipped — present, degraded, or partly missing).
+        bpy.ops.object.select_all(action="DESELECT")
+        target.select_set(True)
+        bpy.context.view_layer.objects.active = target
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="DESELECT")
+        had_eye_slot = False
+        for slot_idx, slot in enumerate(target.material_slots):
+            if not _is_eye_material(slot.material):
+                continue
+            target.active_material_index = slot_idx
+            try:
+                bpy.ops.object.material_slot_select()
+                had_eye_slot = True
+            except Exception:
+                pass
+        if had_eye_slot:
+            try:
+                bpy.ops.mesh.delete(type="FACE")
+            except Exception as e:
+                _log(f"  patch_lod_primitives: LOD{lod} eye-face delete failed: {e}")
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+        # 2. Duplicate LOD0, strip its NON-eye faces so the duplicate
+        # is JUST the eye region, then join into target.
+        bpy.ops.object.select_all(action="DESELECT")
+        lod0.select_set(True)
+        bpy.context.view_layer.objects.active = lod0
+        bpy.ops.object.duplicate(linked=False)
+        donor = bpy.context.active_object
+        donor.name = f"_donor_eyes_for_LOD{lod}"
+
+        # Strip shape keys on donor — LOD0 has 51 ARKit keys but
+        # those bake into LODn's mesh as a Basis with no morphs.
+        if donor.data.shape_keys is not None:
+            try:
+                bpy.context.view_layer.objects.active = donor
+                bpy.ops.object.shape_key_remove(all=True)
+            except Exception:
+                try:
+                    donor.shape_key_clear()
+                except Exception:
+                    pass
+
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="DESELECT")
+        had_non_eye = False
+        for slot_idx, slot in enumerate(donor.material_slots):
+            if _is_eye_material(slot.material):
+                continue
+            donor.active_material_index = slot_idx
+            try:
+                bpy.ops.object.material_slot_select()
+                had_non_eye = True
+            except Exception:
+                pass
+        if had_non_eye:
+            try:
+                bpy.ops.mesh.delete(type="FACE")
+            except Exception as e:
+                _log(f"  patch_lod_primitives: donor non-eye-face delete failed: {e}")
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+        # 3. Join donor (eye-only) into target.
+        bpy.ops.object.select_all(action="DESELECT")
+        donor.select_set(True)
+        target.select_set(True)
+        bpy.context.view_layer.objects.active = target
+        bpy.ops.object.join()
+        # donor is gone after join.
+
+        _log(f"  patched LOD{lod} face mesh with LOD0 eye region "
+             f"({len(target.data.vertices)} total verts now)")
+        patched += 1
+
+    return patched
+
+
 def _merge_armatures():
     """Collapse every armature in the scene into a single one so the
     final GLB ships with one `skins[]` entry instead of one per
@@ -2003,6 +2141,16 @@ def main():
     merged_armatures = _merge_armatures()
     if merged_armatures:
         _log(f"merged {merged_armatures} extra armature(s) into the face armature")
+
+    # Epic's MH LOD pipeline progressively strips eye-region primitives
+    # at low LODs (LOD3-4 lose lacrimal / lashes, LOD5+ lose one
+    # eyeball entirely). Graft LOD0's eye region into every non-LOD0
+    # face mesh so every LOD reads correctly — important for the
+    # face-scan workflow that wants device-based LOD scaling, not
+    # just distance.
+    patched_lods = _patch_lod_primitives_from_lod0()
+    if patched_lods:
+        _log(f"patched {patched_lods} non-LOD0 face mesh(es) with LOD0 eye region")
 
     # Save blend
     blend_path = os.path.join(out_root, f"{args.char}.blend")
