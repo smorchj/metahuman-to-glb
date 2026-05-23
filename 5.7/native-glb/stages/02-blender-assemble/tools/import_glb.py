@@ -1929,6 +1929,12 @@ def _propagate_arkit_to_lod_meshes():
     (jaw open, cheek raise, brow furrow) are spatially smooth across
     the face so this is a sensible approximation.
 
+    LOD7 is intentionally skipped — it's the floor LOD that ships
+    for hardware that won't be driving individual blendshape weights
+    anyway, and 51 keys × ~4800 verts × 12 bytes is ~2.9 MB of delta
+    data per character that nothing consumes. LOD0..6 cover every
+    relevant device tier; LOD7 stays geometry-only.
+
     Mirrors _apply_arkit_to_grooms — world-space deltas so any
     residual transform mismatch between LOD0 and LOD>0 face meshes
     is handled safely (after _merge_armatures the matrices are
@@ -1940,6 +1946,7 @@ def _propagate_arkit_to_lod_meshes():
 
     K = 4
     EPS = 1e-8
+    MAX_LOD_FOR_SHAPE_KEYS = 6  # LOD7 ships geometry only, no morphs.
 
     lod_re = re.compile(r"^(.+)_LOD(\d+)$")
     face_meshes = {}
@@ -1999,6 +2006,10 @@ def _propagate_arkit_to_lod_meshes():
     total_keys = 0
     for lod, target in sorted(face_meshes.items()):
         if lod == 0:
+            continue
+        if lod > MAX_LOD_FOR_SHAPE_KEYS:
+            _log(f"  propagate_arkit_to_lods: LOD{lod} skipped (cap "
+                 f"= LOD{MAX_LOD_FOR_SHAPE_KEYS}, no morphs on floor LOD)")
             continue
 
         verts_local = np.empty(len(target.data.vertices) * 3, dtype=np.float32)
