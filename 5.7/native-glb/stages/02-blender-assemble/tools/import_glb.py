@@ -52,22 +52,42 @@ def _reset_scene():
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
 
-def _import_glb(path):
-    # Blender's built-in glTF 2.0 importer reads .glb binary directly.
+def _import_glb(path, lod_idx=None):
+    """Import a .glb. When `lod_idx` is set (face-mesh LOD imports),
+    every newly-imported MESH object is renamed with a `_LOD<N>`
+    suffix so the final GLB carries distinct mesh names per LOD and
+    stage 04's viewer can detect them. Without this every per-LOD
+    face GLB lands with the same mesh name (`SKM_<char>_FaceMesh`)
+    and Blender's auto-suffix turns them into `.001` / `.002` / …
+    which the viewer can't tell apart."""
+    import re
+    before = set(bpy.data.objects.keys())
     bpy.ops.import_scene.gltf(filepath=path, import_pack_images=True)
+    if lod_idx is None:
+        return
+    new_objs = [o for o in bpy.data.objects if o.name not in before]
+    for obj in new_objs:
+        if obj.type != "MESH":
+            continue
+        stem = re.sub(r"\.\d+$", "", obj.name)  # strip Blender's auto-suffix
+        new_name = f"{stem}_LOD{lod_idx}"
+        obj.name = new_name
+        if obj.data is not None:
+            obj.data.name = new_name
 
 
 def _hide_non_lod0():
-    """Drop LOD>0 copies + UCX collision hulls from render. MH .glb
-    exports keep LOD0 only by default (we set default_level_of_detail=0)
-    but hair-card meshes sometimes slip the LOD suffix in, and the
-    importer renames collisions to UCX_*."""
+    """Hide UE-style collision hulls (UCX_*) from render. We used to
+    also drop LOD>0 face meshes here but the multi-LOD pipeline now
+    keeps them: stage 01 emits one .glb per face LOD, stage 03 ships
+    them all in the final GLB, and the viewer toggles between them
+    at runtime. Non-LOD0 face meshes stay visible so the glTF
+    exporter includes them."""
     hidden = 0
     for obj in bpy.data.objects:
         if obj.type != "MESH":
             continue
-        name = obj.name.lower()
-        if ("_lod" in name and "_lod0" not in name) or name.startswith("ucx_"):
+        if obj.name.lower().startswith("ucx_"):
             obj.hide_viewport = True
             obj.hide_render = True
             hidden += 1
@@ -1858,13 +1878,19 @@ def main():
     hair_names = set()
     for rec in mh["assets"]:
         glb = os.path.join(in_root, rec["file_path"])
-        _log(f"importing {glb}")
-        _import_glb(glb)
+        # Stage 01 stamps each manifest record with the LOD index it was
+        # exported at. Face-SKM records carry lod=0..N-1 (one per
+        # available LOD); body / outfits / hair-card records carry
+        # lod=0. Pass lod_idx through so the face LOD imports get
+        # `_LOD<N>`-suffixed mesh names (see _import_glb docstring).
+        lod_idx = rec.get("lod", 0) if rec.get("role") == "face" else None
+        _log(f"importing {glb}" + (f" (LOD{lod_idx})" if lod_idx is not None else ""))
+        _import_glb(glb, lod_idx=lod_idx)
         if rec.get("role") == "hair":
             hair_names.add(rec["file_path"].lower().replace(".glb", ""))
 
     hidden = _hide_non_lod0()
-    _log(f"hid {hidden} non-LOD0/collision meshes")
+    _log(f"hid {hidden} collision mesh(es)")
 
     # ARKit shape-key bake from the Sequencer-baked LSE FBX (stage 01).
     # UE's Sequencer evaluates the AnimSequence through a live
