@@ -1361,6 +1361,39 @@ def _merge_armatures():
             obj.matrix_world = world_matrix
             reparented += 1
 
+    # Parent-reconciliation (issue #32). The canonical (face) armature already
+    # contains primary body bones (lowerarm_*, thigh_*, upperarm_twist_*, …) but as
+    # DETACHED ROOTS. The graft above skips them (they're in canonical_names) and the
+    # parent pass only touches grafted bones, so their true parent is never set —
+    # parent-driven posing/animation breaks (rotating upperarm_l doesn't move the
+    # forearm) even though the bind pose renders fine (glTF uses world inverse-bind).
+    # Fix: for any bone that exists in BOTH canonical and a donor but sits as a root
+    # in canonical, adopt the donor (body wins) parent. use_connect=False + untouched
+    # head/tail keep rest pose and bind/inverse-bind byte-identical → skinning is
+    # unchanged, only the node hierarchy is repaired. Verified on masculine: exactly
+    # 8 bones reconciled, zero bind-pose drift, blendshapes/LODs preserved.
+    donor_parent = {}
+    for donor in donors:
+        for b in donor.data.bones:
+            if b.parent:
+                donor_parent.setdefault(b.name, b.parent.name)
+    reconciled = 0
+    bpy.context.view_layer.objects.active = canonical
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = canonical.data.edit_bones
+    for name, pn in donor_parent.items():
+        if name in eb and pn in eb and eb[name].parent is None and eb[name] is not eb[pn]:
+            eb[name].use_connect = False
+            eb[name].parent = eb[pn]
+            reconciled += 1
+    bpy.ops.object.mode_set(mode="OBJECT")
+    roots_after = sorted(b.name for b in canonical.data.bones if b.parent is None)
+    print(
+        f"[stage02:merge-armatures] reconciled {reconciled} mis-parented bones; "
+        f"roots now: {roots_after}",
+        flush=True,
+    )
+
     # Delete the now-orphan donor armatures.
     for donor in donors:
         bpy.data.objects.remove(donor, do_unlink=True)
@@ -1378,6 +1411,8 @@ def _merge_armatures():
         "armature_count_before": len(armatures),
         "armature_count_after": 1,
         "grafted_bones": grafted,
+        "reconciled_bones": reconciled,
+        "roots_after": roots_after,
         "swapped_modifiers": swapped_modifiers,
         "reparented_meshes": reparented,
     }
