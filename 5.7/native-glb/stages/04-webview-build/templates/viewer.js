@@ -196,6 +196,19 @@ export async function mount(container, opts) {
     }
   }
 
+  // LOD selector: stage 01 emits the face SkeletalMesh at every LOD UE
+  // ships (0..7), stage 02 names each LOD mesh `<stem>_LOD<N>`, and
+  // stage 03 bundles all of them into the final GLB. This panel
+  // detects those `_LOD<N>` siblings, default-shows LOD0, and lets
+  // the user switch at runtime. Silently no-ops if the GLB has no
+  // LOD-suffixed meshes.
+  if (interactive) {
+    const lodGroups = collectLodGroups(gltf.scene);
+    if (lodGroups.size > 0) {
+      buildLodPanel(container, lodGroups);
+    }
+  }
+
   autoFrame(camera, controls, gltf.scene);
 
   const ro = new ResizeObserver(() => {
@@ -2085,6 +2098,105 @@ const CAPTURE_CALIBRATION = {
   // Jaw open reads weakly too; moderate gain so talking is visible.
   jawOpen:            { bias: 0.05, gain: 1.5 },
 };
+
+// ---------------- LOD selector ----------------
+
+// Walk the scene and group `<stem>_LOD<N>` objects by their stem.
+// Returns Map<stem, Map<lodIndex, Object3D>>. Stages 01/02 emit each
+// face-mesh LOD as a separate glTF node with the suffix; stage 03
+// ships them all in the final GLB so the viewer can toggle between
+// them at runtime.
+function collectLodGroups(root) {
+  const re = /^(.+)_LOD(\d+)$/;
+  const groups = new Map();
+  root.traverse((o) => {
+    if (!o || !o.name) return;
+    const m = re.exec(o.name);
+    if (!m) return;
+    const stem = m[1];
+    const lod  = parseInt(m[2], 10);
+    if (!groups.has(stem)) groups.set(stem, new Map());
+    groups.get(stem).set(lod, o);
+  });
+  return groups;
+}
+
+function buildLodPanel(container, lodGroups) {
+  container.style.position = container.style.position || 'relative';
+
+  // Union of LOD indices across all groups (e.g. face LOD0..LOD7).
+  const allLods = new Set();
+  for (const lodMap of lodGroups.values()) {
+    for (const lod of lodMap.keys()) allLods.add(lod);
+  }
+  const sortedLods = [...allLods].sort((a, b) => a - b);
+
+  const root = document.createElement('div');
+  root.id = 'mh-lod-panel';
+  root.style.cssText = [
+    'position:absolute', 'bottom:8px', 'right:8px', 'z-index:10',
+    'font:12px/1.3 system-ui,-apple-system,sans-serif', 'color:#e8e8e8',
+    'background:rgba(18,20,26,0.88)', 'border:1px solid #2a2f3a',
+    'border-radius:6px', 'user-select:none', 'backdrop-filter:blur(6px)',
+    'padding:6px 8px', 'display:flex', 'align-items:center', 'gap:4px',
+  ].join(';');
+
+  const label = document.createElement('span');
+  label.textContent = 'LOD';
+  label.style.cssText = 'margin-right:6px;font-weight:600;letter-spacing:0.04em;color:#aab';
+  root.appendChild(label);
+
+  let currentLod = 0;
+  const buttons = [];
+  const refreshActive = () => {
+    for (const btn of buttons) {
+      const on = parseInt(btn.dataset.lod, 10) === currentLod;
+      btn.style.background  = on ? '#335'    : '#1a1c22';
+      btn.style.color       = on ? '#8af'    : '#777';
+      btn.style.borderColor = on ? '#8af'    : '#444';
+    }
+  };
+  const applyLod = (lod) => {
+    currentLod = lod;
+    for (const lodMap of lodGroups.values()) {
+      // If THIS group doesn't have the chosen lod, fall back to the
+      // closest available (e.g. body has only LOD0 but the user
+      // picked LOD3 — body stays visible at LOD0).
+      let chosen = lod;
+      if (!lodMap.has(chosen)) {
+        let bestDelta = Infinity;
+        for (const candidate of lodMap.keys()) {
+          const d = Math.abs(candidate - lod);
+          if (d < bestDelta) { bestDelta = d; chosen = candidate; }
+        }
+      }
+      for (const [l, obj] of lodMap) {
+        obj.visible = (l === chosen);
+      }
+    }
+    refreshActive();
+  };
+
+  for (const lod of sortedLods) {
+    const btn = document.createElement('button');
+    btn.textContent = String(lod);
+    btn.dataset.lod = String(lod);
+    btn.style.cssText = [
+      'min-width:24px', 'padding:3px 6px',
+      'border:1px solid #444', 'border-radius:3px',
+      'cursor:pointer', 'font:11px system-ui',
+      'background:#1a1c22', 'color:#777',
+    ].join(';');
+    btn.addEventListener('click', () => applyLod(lod));
+    root.appendChild(btn);
+    buttons.push(btn);
+  }
+
+  container.appendChild(root);
+
+  // Default to LOD0 (or the lowest available if 0 is missing).
+  applyLod(sortedLods.includes(0) ? 0 : sortedLods[0]);
+}
 
 export function calibrateScore(name, raw) {
   const c = CAPTURE_CALIBRATION[name];

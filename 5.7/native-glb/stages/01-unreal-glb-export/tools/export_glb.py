@@ -110,7 +110,7 @@ def _list_under(folder, class_name):
     return out
 
 
-def _make_gltf_options():
+def _make_gltf_options(lod=0):
     """Build GLTFExportOptions for MH data extraction.
 
     Key flags:
@@ -121,6 +121,10 @@ def _make_gltf_options():
       - export_vertex_skin_weights=True — skeleton + skinning survive.
       - export_uniform_scale=0.01 — UE is cm; glTF expects metres.
       - texture_image_format=PNG — lossless skin textures.
+      - default_level_of_detail=<lod> — which LOD to bake into this
+        GLB. The face SKM is re-exported once per LOD by the caller
+        so the final stage-03 GLB ends up with every LOD available
+        and the viewer can switch between them at runtime.
 
     Bake size stays at the exporter default (1024). The quality problem
     is not the bake output dimensions — it's that the SOURCE textures
@@ -140,13 +144,39 @@ def _make_gltf_options():
         ("export_vertex_skin_weights", True),
         ("export_uniform_scale", 0.01),
         ("texture_image_format", unreal.GLTFTextureImageFormat.PNG),
-        ("default_level_of_detail", 0),
+        ("default_level_of_detail", int(lod)),
         ("export_preview_mesh", False),
         ("skip_near_default_values", True),
     ):
         try: opts.set_editor_property(k, v)
         except Exception as e: _log(f"  GLTFExportOption.{k} not set: {e}")
     return opts
+
+
+# MetaHuman face SkeletalMeshes ship with up to 8 LODs (LOD0..LOD7).
+# Export every available one as a separate .glb so stage 03 can bundle
+# them all into the final GLB and the viewer can switch between them.
+# Body / outfits / hair-cards stay single-LOD — only the face needs
+# the resolution ladder for distance scaling and face-scan use.
+FACE_LOD_COUNT_MAX = 8
+
+
+def _face_lod_count(face_skm):
+    """How many LODs the face SkeletalMesh has, clamped to
+    FACE_LOD_COUNT_MAX. We try `get_lod_count()` first (newer UE
+    bindings), fall back to the `lod_info` array (older), then to the
+    safe max if both probes fail."""
+    try:
+        return min(int(face_skm.get_lod_count()), FACE_LOD_COUNT_MAX)
+    except Exception:
+        pass
+    try:
+        info = face_skm.get_editor_property("lod_info")
+        if info is not None:
+            return min(len(info), FACE_LOD_COUNT_MAX)
+    except Exception:
+        pass
+    return FACE_LOD_COUNT_MAX
 
 
 def _export_one(asset, filepath, opts):
@@ -643,25 +673,51 @@ def main():
     _log(f"found {len(skm)} SkeletalMesh(es) ({skm_names}) + "
          f"{len(hair_cards)} hair-card StaticMesh(es)")
 
-    opts = _make_gltf_options()
     manifest_records = []
     warnings = []
     seen_tex = set()  # de-dupe Texture2D exports across assets
+
+    def _record_export(asset, abs_path, rel, lod_idx):
+        sz = os.path.getsize(abs_path)
+        manifest_records.append({
+            "asset_path": asset.get_path_name(),
+            "file_path": rel,
+            "size_bytes": sz,
+            "mesh_type": type(asset).__name__,
+            "role": _infer_role(asset),
+            "lod": int(lod_idx),
+        })
+        return sz
+
     for asset in skm + hair_cards:
         name = asset.get_name()
+        role = _infer_role(asset)
+
+        if role == "face":
+            # Face SKM: export every LOD. Stage 02 imports them all,
+            # stage 03 bundles them into the final GLB, stage 04
+            # viewer picks one at runtime via a LOD selector.
+            lod_count = _face_lod_count(asset)
+            _log(f"face SKM '{name}' has {lod_count} LOD(s) — exporting each")
+            for lod_idx in range(lod_count):
+                rel = f"{name}_LOD{lod_idx}.glb"
+                abs_path = os.path.join(out_dir, rel)
+                try:
+                    _export_one(asset, abs_path, _make_gltf_options(lod=lod_idx))
+                    sz = _record_export(asset, abs_path, rel, lod_idx)
+                    _log(f"  + {rel}  (LOD{lod_idx}, {sz/1_000_000:.1f} MB)")
+                except Exception as e:
+                    warnings.append(f"{name} LOD{lod_idx}: {e}")
+                    _log(f"  ERROR {name} LOD{lod_idx}: {e}")
+            continue
+
+        # Everything else (body, outfits, hair-cards): LOD0 only.
         rel = f"{name}.glb"
         abs_path = os.path.join(out_dir, rel)
         try:
-            _export_one(asset, abs_path, opts)
-            sz = os.path.getsize(abs_path)
+            _export_one(asset, abs_path, _make_gltf_options(lod=0))
+            sz = _record_export(asset, abs_path, rel, 0)
             _log(f"  + {rel}  ({sz/1_000_000:.1f} MB)")
-            manifest_records.append({
-                "asset_path": asset.get_path_name(),
-                "file_path": rel,
-                "size_bytes": sz,
-                "mesh_type": type(asset).__name__,
-                "role": _infer_role(asset),
-            })
         except Exception as e:
             warnings.append(f"{name}: {e}")
             _log(f"  ERROR {name}: {e}")
@@ -742,9 +798,18 @@ def main():
         for prefix, plugin_dir in style_to_plugin:
             if style.startswith(prefix):
                 for atlas_kind in ("Attribute", "Tangent"):
-                    plugin_atlas_paths.append(
-                        f"{plugin_dir}/{style}/{style}_CardsAtlas_{atlas_kind}"
-                        f".{style}_CardsAtlas_{atlas_kind}")
+                    # Epic's MetaHuman plugin ships Beard_M_Curly's
+                    # atlases as "CardsAltas" (typo: "Altas" instead of
+                    # "Atlas"). Every other groom uses the correct
+                    # spelling. Append BOTH paths; load_asset returns
+                    # None for the one that doesn't exist and the loop
+                    # below silently skips it. The output filename is
+                    # normalised back to the canonical spelling so
+                    # stage 02 only needs to know one name.
+                    for spelling in ("CardsAtlas", "CardsAltas"):
+                        plugin_atlas_paths.append(
+                            f"{plugin_dir}/{style}/{style}_{spelling}_{atlas_kind}"
+                            f".{style}_{spelling}_{atlas_kind}")
                 matched = True
                 break
         if matched:
@@ -760,9 +825,15 @@ def main():
             _log(f"    sidecar: load {p} raised: {e}")
             continue
         if tex is None:
-            _log(f"    sidecar: load {p} returned None")
+            # Expected: the dual-spelling fallback above appends both
+            # "CardsAtlas" and "CardsAltas" candidates per groom, so
+            # exactly one of every pair returns None. Not an error.
             continue
-        tex_name = tex.get_name()
+        # Normalise Epic's "CardsAltas" typo (currently only on
+        # Beard_M_Curly) so the file on disk uses the canonical
+        # spelling. Stage 02 sidecar resolution then has to know
+        # only one name.
+        tex_name = tex.get_name().replace("CardsAltas", "CardsAtlas")
         rel = f"textures/{tex_name}.png"
         abs_path = os.path.join(textures_dir, f"{tex_name}.png")
         try:

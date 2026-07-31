@@ -52,22 +52,42 @@ def _reset_scene():
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
 
-def _import_glb(path):
-    # Blender's built-in glTF 2.0 importer reads .glb binary directly.
+def _import_glb(path, lod_idx=None):
+    """Import a .glb. When `lod_idx` is set (face-mesh LOD imports),
+    every newly-imported MESH object is renamed with a `_LOD<N>`
+    suffix so the final GLB carries distinct mesh names per LOD and
+    stage 04's viewer can detect them. Without this every per-LOD
+    face GLB lands with the same mesh name (`SKM_<char>_FaceMesh`)
+    and Blender's auto-suffix turns them into `.001` / `.002` / …
+    which the viewer can't tell apart."""
+    import re
+    before = set(bpy.data.objects.keys())
     bpy.ops.import_scene.gltf(filepath=path, import_pack_images=True)
+    if lod_idx is None:
+        return
+    new_objs = [o for o in bpy.data.objects if o.name not in before]
+    for obj in new_objs:
+        if obj.type != "MESH":
+            continue
+        stem = re.sub(r"\.\d+$", "", obj.name)  # strip Blender's auto-suffix
+        new_name = f"{stem}_LOD{lod_idx}"
+        obj.name = new_name
+        if obj.data is not None:
+            obj.data.name = new_name
 
 
 def _hide_non_lod0():
-    """Drop LOD>0 copies + UCX collision hulls from render. MH .glb
-    exports keep LOD0 only by default (we set default_level_of_detail=0)
-    but hair-card meshes sometimes slip the LOD suffix in, and the
-    importer renames collisions to UCX_*."""
+    """Hide UE-style collision hulls (UCX_*) from render. We used to
+    also drop LOD>0 face meshes here but the multi-LOD pipeline now
+    keeps them: stage 01 emits one .glb per face LOD, stage 03 ships
+    them all in the final GLB, and the viewer toggles between them
+    at runtime. Non-LOD0 face meshes stay visible so the glTF
+    exporter includes them."""
     hidden = 0
     for obj in bpy.data.objects:
         if obj.type != "MESH":
             continue
-        name = obj.name.lower()
-        if ("_lod" in name and "_lod0" not in name) or name.startswith("ucx_"):
+        if obj.name.lower().startswith("ucx_"):
             obj.hide_viewport = True
             obj.hide_render = True
             hidden += 1
@@ -1752,6 +1772,394 @@ def _remove_gltf_placeholder_empties():
     return removed
 
 
+def _patch_lod_primitives_from_lod0():
+    """Epic's MetaHuman LOD pipeline strips eye-region primitives at
+    low LODs — LOD3-4 lose the lacrimal fluid and (LOD4+) the
+    eyelashes, LOD5-7 drop one of the two eyeballs entirely. The skin
+    still renders fine but the eye region reads broken: the eye
+    shell hangs there with nothing underneath, or one socket is
+    just a black hole.
+
+    For our viewer (and the upcoming face-scan workflow that needs
+    device-based LOD scaling, not distance-based) every LOD should
+    carry the full eye-region geometry. This pass grafts LOD0's eye
+    primitives (EyeL, EyeR, EyeShell, Eyelashes, LacrimalFluid) into
+    every non-LOD0 face mesh, deleting that mesh's existing eye-area
+    faces first so we don't double up.
+
+    Runs AFTER _merge_armatures so LOD0 and LODn share a skeleton —
+    vertex groups on the grafted eye geometry resolve to bones that
+    exist on every LOD's armature modifier.
+
+    Shape keys are NOT propagated here. LOD0 carries the 51 ARKit
+    keys but they only target LOD0's vertex order; LODn meshes stay
+    blendshape-free in this pass and pick up keys in a separate
+    later step (inverse-distance² weighting from LOD0)."""
+    import re
+    EYE_MAT_KEYWORDS = (
+        "eyel_baked", "eyer_baked",
+        "eyeshell", "lashmat", "lacrimalfluid",
+    )
+
+    def _is_eye_material(mat):
+        if mat is None or not mat.name:
+            return False
+        n = mat.name.lower()
+        return any(k in n for k in EYE_MAT_KEYWORDS)
+
+    # Collect face-mesh LODs by index.
+    face_meshes = {}
+    lod_re = re.compile(r"^(.+)_LOD(\d+)$")
+    for o in bpy.data.objects:
+        if o.type != "MESH":
+            continue
+        m = lod_re.match(o.name)
+        if not m:
+            continue
+        stem, lod = m.group(1), int(m.group(2))
+        if "facemesh" not in stem.lower():
+            continue
+        face_meshes[lod] = o
+
+    lod0 = face_meshes.get(0)
+    if lod0 is None or len(face_meshes) <= 1:
+        _log("  patch_lod_primitives: no LOD>0 face meshes to patch")
+        return 0
+
+    patched = 0
+    for lod, target in sorted(face_meshes.items()):
+        if lod == 0:
+            continue
+
+        # 1. Delete the eye-region faces in this LOD (whatever Epic
+        # shipped — present, degraded, or partly missing).
+        bpy.ops.object.select_all(action="DESELECT")
+        target.select_set(True)
+        bpy.context.view_layer.objects.active = target
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="DESELECT")
+        had_eye_slot = False
+        for slot_idx, slot in enumerate(target.material_slots):
+            if not _is_eye_material(slot.material):
+                continue
+            target.active_material_index = slot_idx
+            try:
+                bpy.ops.object.material_slot_select()
+                had_eye_slot = True
+            except Exception:
+                pass
+        if had_eye_slot:
+            try:
+                bpy.ops.mesh.delete(type="FACE")
+            except Exception as e:
+                _log(f"  patch_lod_primitives: LOD{lod} eye-face delete failed: {e}")
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+        # 2. Duplicate LOD0, strip its NON-eye faces so the duplicate
+        # is JUST the eye region, then join into target.
+        bpy.ops.object.select_all(action="DESELECT")
+        lod0.select_set(True)
+        bpy.context.view_layer.objects.active = lod0
+        bpy.ops.object.duplicate(linked=False)
+        donor = bpy.context.active_object
+        donor.name = f"_donor_eyes_for_LOD{lod}"
+
+        # Strip shape keys on donor — LOD0 has 51 ARKit keys but
+        # those bake into LODn's mesh as a Basis with no morphs.
+        if donor.data.shape_keys is not None:
+            try:
+                bpy.context.view_layer.objects.active = donor
+                bpy.ops.object.shape_key_remove(all=True)
+            except Exception:
+                try:
+                    donor.shape_key_clear()
+                except Exception:
+                    pass
+
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="DESELECT")
+        had_non_eye = False
+        for slot_idx, slot in enumerate(donor.material_slots):
+            if _is_eye_material(slot.material):
+                continue
+            donor.active_material_index = slot_idx
+            try:
+                bpy.ops.object.material_slot_select()
+                had_non_eye = True
+            except Exception:
+                pass
+        if had_non_eye:
+            try:
+                bpy.ops.mesh.delete(type="FACE")
+            except Exception as e:
+                _log(f"  patch_lod_primitives: donor non-eye-face delete failed: {e}")
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+        # 3. Join donor (eye-only) into target.
+        bpy.ops.object.select_all(action="DESELECT")
+        donor.select_set(True)
+        target.select_set(True)
+        bpy.context.view_layer.objects.active = target
+        bpy.ops.object.join()
+        # donor is gone after join.
+
+        _log(f"  patched LOD{lod} face mesh with LOD0 eye region "
+             f"({len(target.data.vertices)} total verts now)")
+        patched += 1
+
+    return patched
+
+
+def _propagate_arkit_to_lod_meshes():
+    """Propagate LOD0's ARKit shape keys onto every LOD>0 face mesh
+    via k=4 inverse-distance² weighting from LOD0.
+
+    Epic ships LOD0 with the 52 ARKit blendshapes; the LOD>0 face
+    meshes carry no shape keys. We want device-based LOD scaling
+    (lower-end hardware snaps to a higher LOD index even when the
+    face is shown up close), so every LOD has to animate from ARKit
+    input — not just LOD0 at viewing distance.
+
+    Runs AFTER _patch_lod_primitives_from_lod0(). The eye-region
+    verts on each LOD>0 were duplicated from LOD0 and therefore sit
+    at exactly the same world position as their LOD0 sources →
+    nn_dist≈0 → they inherit LOD0's deltas with near-zero blending
+    error. The decimated skin verts on LOD>0 pick up a weighted
+    blend of their ~4 closest LOD0 skin verts; facial morph deltas
+    (jaw open, cheek raise, brow furrow) are spatially smooth across
+    the face so this is a sensible approximation.
+
+    LOD7 is intentionally skipped — it's the floor LOD that ships
+    for hardware that won't be driving individual blendshape weights
+    anyway, and 51 keys × ~4800 verts × 12 bytes is ~2.9 MB of delta
+    data per character that nothing consumes. LOD0..6 cover every
+    relevant device tier; LOD7 stays geometry-only.
+
+    Mirrors _apply_arkit_to_grooms — world-space deltas so any
+    residual transform mismatch between LOD0 and LOD>0 face meshes
+    is handled safely (after _merge_armatures the matrices are
+    usually identical, but we don't depend on it)."""
+    import re
+    import numpy as np
+    from mathutils.kdtree import KDTree
+    from mathutils import Vector
+
+    K = 4
+    EPS = 1e-8
+    MAX_LOD_FOR_SHAPE_KEYS = 6  # LOD7 ships geometry only, no morphs.
+
+    lod_re = re.compile(r"^(.+)_LOD(\d+)$")
+    face_meshes = {}
+    for o in bpy.data.objects:
+        if o.type != "MESH":
+            continue
+        m = lod_re.match(o.name)
+        if not m:
+            continue
+        stem, lod = m.group(1), int(m.group(2))
+        if "facemesh" not in stem.lower():
+            continue
+        face_meshes[lod] = o
+
+    lod0 = face_meshes.get(0)
+    if lod0 is None or len(face_meshes) <= 1:
+        _log("  propagate_arkit_to_lods: no LOD>0 face meshes to populate")
+        return 0
+
+    sk0 = lod0.data.shape_keys
+    if sk0 is None or len(sk0.key_blocks) <= 1:
+        _log("  propagate_arkit_to_lods: LOD0 has no shape keys, skipping")
+        return 0
+
+    basis0_local = np.empty(len(sk0.key_blocks[0].data) * 3, dtype=np.float32)
+    sk0.key_blocks[0].data.foreach_get("co", basis0_local)
+    basis0_local = basis0_local.reshape(-1, 3)
+
+    R0 = np.array(lod0.matrix_world, dtype=np.float64)[:3, :3]
+    t0 = np.array(lod0.matrix_world, dtype=np.float64)[:3, 3]
+    basis0_world = basis0_local.astype(np.float64) @ R0.T + t0
+
+    deltas_world = {}
+    for kb in sk0.key_blocks:
+        if kb.name == "Basis":
+            continue
+        pos = np.empty(len(kb.data) * 3, dtype=np.float32)
+        kb.data.foreach_get("co", pos)
+        d_local = pos.reshape(-1, 3) - basis0_local
+        if not np.any(np.abs(d_local) > 1e-7):
+            continue
+        # delta is a direction vector; only R rotates it, t cancels.
+        deltas_world[kb.name] = d_local.astype(np.float64) @ R0.T
+
+    if not deltas_world:
+        _log("  propagate_arkit_to_lods: LOD0 shape keys all zero")
+        return 0
+
+    tree = KDTree(basis0_world.shape[0])
+    for i, p in enumerate(basis0_world):
+        tree.insert(Vector((float(p[0]), float(p[1]), float(p[2]))), i)
+    tree.balance()
+
+    _log(f"  propagate_arkit_to_lods: LOD0 verts={basis0_world.shape[0]} "
+         f"keys={len(deltas_world)}")
+
+    total_keys = 0
+    for lod, target in sorted(face_meshes.items()):
+        if lod == 0:
+            continue
+        if lod > MAX_LOD_FOR_SHAPE_KEYS:
+            _log(f"  propagate_arkit_to_lods: LOD{lod} skipped (cap "
+                 f"= LOD{MAX_LOD_FOR_SHAPE_KEYS}, no morphs on floor LOD)")
+            continue
+
+        verts_local = np.empty(len(target.data.vertices) * 3, dtype=np.float32)
+        target.data.vertices.foreach_get("co", verts_local)
+        verts_local = verts_local.reshape(-1, 3).astype(np.float64)
+        Rg = np.array(target.matrix_world, dtype=np.float64)[:3, :3]
+        tg = np.array(target.matrix_world, dtype=np.float64)[:3, 3]
+        verts_world = verts_local @ Rg.T + tg
+        N = verts_world.shape[0]
+
+        nn_idx = np.empty((N, K), dtype=np.int64)
+        nn_dist = np.empty((N, K), dtype=np.float64)
+        for vi in range(N):
+            p = verts_world[vi]
+            results = tree.find_n(
+                Vector((float(p[0]), float(p[1]), float(p[2]))), K)
+            for k, (_co, idx, d) in enumerate(results):
+                nn_idx[vi, k] = idx
+                nn_dist[vi, k] = d
+
+        w = 1.0 / (nn_dist * nn_dist + EPS)
+        w /= w.sum(axis=1, keepdims=True)
+
+        # Wipe any prior shape keys on the LOD mesh — the eye-region
+        # patch joins in a donor that was already stripped, but a
+        # fresh import might still have a stale Basis here.
+        if target.data.shape_keys is None:
+            target.shape_key_add(name="Basis", from_mix=False)
+        existing = [kb.name for kb in target.data.shape_keys.key_blocks
+                    if kb.name != "Basis"]
+        for n in reversed(existing):
+            target.shape_key_remove(target.data.shape_keys.key_blocks[n])
+
+        Rg_inv = np.linalg.inv(Rg)
+
+        created = 0
+        skipped = []
+        for key_name, d0_world in deltas_world.items():
+            sampled_world = np.einsum("vk,vkd->vd", w, d0_world[nn_idx])
+            if not np.any(np.abs(sampled_world) > 1e-6):
+                skipped.append(key_name)
+                continue
+            sampled_local = sampled_world @ Rg_inv.T
+            new_positions = (verts_local + sampled_local).astype(np.float32)
+            kb = target.shape_key_add(name=key_name, from_mix=False)
+            # Match groom path: glTF exporter writes shape_key.value
+            # into mesh.weights → zombie at rest if non-zero.
+            kb.value = 0.0
+            kb.data.foreach_set("co", new_positions.reshape(-1))
+            created += 1
+
+        nn0 = nn_dist[:, 0]
+        _log(f"  propagate_arkit_to_lods: LOD{lod} verts={N} keys_created={created} "
+             f"skipped_zero={len(skipped)} nn0_mean={nn0.mean()*1000:.2f}mm "
+             f"p95={np.percentile(nn0, 95)*1000:.2f}mm")
+        total_keys += created
+
+    return total_keys
+
+
+def _merge_armatures():
+    """Collapse every armature in the scene into a single one so the
+    final GLB ships with one `skins[]` entry instead of one per
+    SkeletalMesh.
+
+    UE's glTF exporter writes each MetaHuman SkeletalMesh as its own
+    .glb, each carrying its own skin. Stage 01 imports the face,
+    body, and outfits as separate .glbs, so we end up with 3
+    armatures in Blender — face (full MH facial rig + spine + head),
+    body (spine + limbs), and outfits (same as body). They all
+    reference the same underlying UE skeleton, so trunk bones (head,
+    neck, spine_*) appear in every armature with identical names and
+    rest transforms.
+
+    Strategy:
+      1. Pick the armature with the MOST bones as the master (the
+         face armature; it carries the facial rig + the full spine).
+      2. Re-target every mesh's Armature modifier and every child
+         object's parent to point at the master.
+      3. `object.join()` the others into the master. Blender renames
+         conflicting trunk bones with `.001` / `.002` / ... suffixes;
+         that's fine because mesh vertex groups continue to reference
+         the ORIGINAL bone name, which after join resolves to the
+         master's bone (anatomically identical position).
+      4. Prune the orphaned suffix-bones the join left behind so the
+         final skin doesn't carry dead joints.
+    """
+    armatures = [o for o in bpy.data.objects if o.type == "ARMATURE"]
+    if len(armatures) <= 1:
+        return 0
+
+    # Master = the largest armature (the face rig).
+    armatures.sort(key=lambda a: -len(a.data.bones))
+    master = armatures[0]
+    others = armatures[1:]
+    others_set = set(others)
+
+    _log(f"  merging {len(others)} armature(s) into '{master.name}' "
+         f"({len(master.data.bones)} bones)")
+    for a in others:
+        _log(f"    - '{a.name}' ({len(a.data.bones)} bones)")
+
+    # Retarget mesh Armature modifiers BEFORE the join (after join,
+    # `others` are deleted and dangling modifier pointers would land
+    # on None).
+    for obj in bpy.data.objects:
+        if obj.type != "MESH":
+            continue
+        for mod in obj.modifiers:
+            if mod.type == "ARMATURE" and mod.object in others_set:
+                mod.object = master
+
+    # Reparent objects whose parent is one of the others.
+    for obj in bpy.data.objects:
+        if obj.parent in others_set:
+            world_mat = obj.matrix_world.copy()
+            obj.parent = master
+            obj.matrix_world = world_mat
+
+    # Join. Active = master; selected = master + all others.
+    bpy.ops.object.select_all(action="DESELECT")
+    for arm in armatures:
+        arm.select_set(True)
+    bpy.context.view_layer.objects.active = master
+    bpy.ops.object.join()
+
+    # Prune orphaned suffix-bones (e.g. "head.001", "spine_03.002").
+    # These are duplicates of trunk bones already in the master from
+    # the original face armature; the join auto-suffixed them on
+    # name collision. Nothing references them via vertex groups
+    # because the meshes still look up by the un-suffixed name.
+    import re
+    bpy.context.view_layer.objects.active = master
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = master.data.edit_bones
+    existing = {b.name for b in eb}
+    suffix_re = re.compile(r"^(.+)\.\d+$")
+    pruned = 0
+    for b in list(eb):
+        m = suffix_re.match(b.name)
+        if m and m.group(1) in existing:
+            eb.remove(eb[b.name])
+            pruned += 1
+    bpy.ops.object.mode_set(mode="OBJECT")
+    if pruned:
+        _log(f"  pruned {pruned} duplicate suffix-bone(s) after join")
+
+    return len(others)
+
+
 def main():
     args = _parse()
     ws = os.path.abspath(args.workspace)
@@ -1768,13 +2176,19 @@ def main():
     hair_names = set()
     for rec in mh["assets"]:
         glb = os.path.join(in_root, rec["file_path"])
-        _log(f"importing {glb}")
-        _import_glb(glb)
+        # Stage 01 stamps each manifest record with the LOD index it was
+        # exported at. Face-SKM records carry lod=0..N-1 (one per
+        # available LOD); body / outfits / hair-card records carry
+        # lod=0. Pass lod_idx through so the face LOD imports get
+        # `_LOD<N>`-suffixed mesh names (see _import_glb docstring).
+        lod_idx = rec.get("lod", 0) if rec.get("role") == "face" else None
+        _log(f"importing {glb}" + (f" (LOD{lod_idx})" if lod_idx is not None else ""))
+        _import_glb(glb, lod_idx=lod_idx)
         if rec.get("role") == "hair":
             hair_names.add(rec["file_path"].lower().replace(".glb", ""))
 
     hidden = _hide_non_lod0()
-    _log(f"hid {hidden} non-LOD0/collision meshes")
+    _log(f"hid {hidden} collision mesh(es)")
 
     # ARKit shape-key bake from the Sequencer-baked LSE FBX (stage 01).
     # UE's Sequencer evaluates the AnimSequence through a live
@@ -1878,6 +2292,34 @@ def main():
     scalp_darkened = _bake_scalp_darkening()
     if scalp_darkened:
         _log(f"baked scalp darkening onto {scalp_darkened} face vert(s)")
+
+    # Collapse face / body / outfits armatures into one so the final
+    # GLB ships with a single skins[] entry. Stage 01 emits one .glb
+    # per MH SkeletalMesh (each with its own embedded skin), and the
+    # standard import path keeps them separate; that's wasteful and
+    # makes it impossible to drive everything off a single animation.
+    merged_armatures = _merge_armatures()
+    if merged_armatures:
+        _log(f"merged {merged_armatures} extra armature(s) into the face armature")
+
+    # Epic's MH LOD pipeline progressively strips eye-region primitives
+    # at low LODs (LOD3-4 lose lacrimal / lashes, LOD5+ lose one
+    # eyeball entirely). Graft LOD0's eye region into every non-LOD0
+    # face mesh so every LOD reads correctly — important for the
+    # face-scan workflow that wants device-based LOD scaling, not
+    # just distance.
+    patched_lods = _patch_lod_primitives_from_lod0()
+    if patched_lods:
+        _log(f"patched {patched_lods} non-LOD0 face mesh(es) with LOD0 eye region")
+
+    # Propagate LOD0's 52 ARKit shape keys onto every LOD>0 face mesh
+    # via k=4 inverse-distance² weighting from the LOD0 verts.
+    # Without this, LOD>0 reads correct geometrically but every
+    # blendshape slider goes dead — the face freezes at rest when
+    # the device is forced onto a higher LOD.
+    lod_keys = _propagate_arkit_to_lod_meshes()
+    if lod_keys:
+        _log(f"propagated {lod_keys} shape key(s) onto LOD>0 face mesh(es)")
 
     # Save blend
     blend_path = os.path.join(out_root, f"{args.char}.blend")
